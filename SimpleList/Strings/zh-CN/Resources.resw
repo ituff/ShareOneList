@@ -480,4 +480,19 @@
   <data name="CreateDrive_CloudType_Global.Content" xml:space="preserve">
     <value>国际版</value>
   </data>
+  <data name="DriveHubPage_Back.Text" xml:space="preserve">
+    <value>返回</value>
+  </data>
+  <data name="DriveHubPage_NoOneDrive" xml:space="preserve">
+    <value>没有 OneDrive</value>
+  </data>
+  <data name="DriveHubPage_NoOneDriveDesc" xml:space="preserve">
+    <value>此账户没有 OneDrive 许可证。</value>
+  </data>
+  <data name="DriveHubPage_NoSharePoint" xml:space="preserve">
+    <value>没有 SharePoint 站点</value>
+  </data>
+  <data name="DriveHubPage_NoSharePointDesc" xml:space="preserve">
+    <value>未找到此账户可访问的 SharePoint 站点。</value>
+  </data>
 </root>

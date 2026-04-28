@@ -45,6 +45,7 @@
     <None Remove="Pages\BookmarkPage.xaml" />
     <None Remove="Pages\CloudPage.xaml" />
     <None Remove="Pages\DrivePage.xaml" />
+    <None Remove="Pages\DriveHubPage.xaml" />
     <None Remove="Pages\HomePage.xaml" />
     <None Remove="Pages\SettingPage.xaml" />
     <None Remove="Pages\TaskManagerPage.xaml" />
@@ -164,6 +165,9 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Pages\DrivePage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="Pages\DriveHubPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Views\Tools\CreateLink.xaml">
