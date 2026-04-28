@@ -237,6 +237,15 @@
   <data name="SettingPage_AppTheme.Header" xml:space="preserve">
     <value>App Theme</value>
   </data>
+  <data name="SettingPage_About.Description" xml:space="preserve">
+    <value>OneDrive &amp; SharePoint, Global &amp; China — one app for all your clouds</value>
+  </data>
+  <data name="SettingPage_Credits.Header" xml:space="preserve">
+    <value>Based on SimpleList by aiguoli</value>
+  </data>
+  <data name="SettingPage_Credits.Description" xml:space="preserve">
+    <value>Thanks to the original author for the open-source contribution</value>
+  </data>
   <data name="SettingPage_CheckUpdate.Content" xml:space="preserve">
     <value>Check for Update</value>
   </data>

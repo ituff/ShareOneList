@@ -20,7 +20,7 @@ namespace SimpleList.Helpers
     {
         private static readonly string CacheFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SimpleList", "FileCache");
+            "ShareOneList", "FileCache");
 
         public static async Task OpenFileAsync(FileViewModel file, XamlRoot xamlRoot)
         {
