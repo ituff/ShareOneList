@@ -339,6 +339,15 @@
   <data name="SettingPage_AppTheme.Header" xml:space="preserve">
     <value>App主题</value>
   </data>
+  <data name="SettingPage_About.Description" xml:space="preserve">
+    <value>OneDrive 与 SharePoint，国际版与世纪互联——一个应用，连接所有云</value>
+  </data>
+  <data name="SettingPage_Credits.Header" xml:space="preserve">
+    <value>基于 aiguoli 的 SimpleList 项目</value>
+  </data>
+  <data name="SettingPage_Credits.Description" xml:space="preserve">
+    <value>感谢原作者的开源贡献</value>
+  </data>
   <data name="SettingPage_CheckUpdate.Content" xml:space="preserve">
     <value>检查更新</value>
   </data>

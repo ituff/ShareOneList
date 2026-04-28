@@ -23,9 +23,9 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <AssemblyName>SimpleList</AssemblyName>
+    <AssemblyName>ShareOneList</AssemblyName>
     <Authors>Thawne</Authors>
-    <PackageProjectUrl>https://github.com/aiguoli/SimpleList</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/ituff/SimpleList21V</PackageProjectUrl>
     <AssemblyVersion>1.15.2</AssemblyVersion>
     <ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
     <PackageIcon>Assets\128.png</PackageIcon>

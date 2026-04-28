@@ -22,7 +22,7 @@ namespace SimpleList.Pages
         private async void CheckUpdate(object sender, RoutedEventArgs e)
         {
             CheckUpdateButton.IsEnabled = false;
-            var ver = await UpdateHelper.CheckUpdateAsync("aiguoli", "SimpleList");
+            var ver = await UpdateHelper.CheckUpdateAsync("ituff", "SimpleList21V");
             if (ver.IsExistNewVersion)
             {
                 // Update App
@@ -34,7 +34,7 @@ namespace SimpleList.Pages
                     { Architecture.X86, "x86" },
                     { Architecture.Arm64, "arm64" },
                 };
-                zipballUrl = Array.Find(ver.Assets, asset => asset.Name == $@"SimpleList-{ver.TagName}-{archMap[arch]}.zip")?.Url;
+                zipballUrl = Array.Find(ver.Assets, asset => asset.Name == $@"ShareOneList-{ver.TagName}-{archMap[arch]}.zip")?.Url;
                 StatusInfo.Description = ver.Changelog;
                 NewVersion.Text = ver.TagName;
                 StatusInfo.Visibility = Visibility.Visible;
@@ -98,10 +98,10 @@ namespace SimpleList.Pages
             var zipFile = Path.Combine(Path.GetTempPath(), $@"{Path.GetRandomFileName()}.zip");
             string psScript = $@"
                 Stop-Process -Name '{Process.GetCurrentProcess().ProcessName}' -Force
-                Start-BitsTransfer -Source '{zipballUrl}' -Destination '{zipFile}' -DisplayName 'SimpleList Update'
+                Start-BitsTransfer -Source '{zipballUrl}' -Destination '{zipFile}' -DisplayName 'ShareOneList Update'
                 Expand-Archive -Path '{zipFile}' -DestinationPath '{Environment.CurrentDirectory}' -Force
                 Remove-Item -Path {zipFile}
-                Start-Process '{Path.Combine(Environment.CurrentDirectory, "SimpleList.exe")}'
+                Start-Process '{Path.Combine(Environment.CurrentDirectory, "ShareOneList.exe")}'
                 Pause
             ";
             Process.Start("PowerShell", psScript);

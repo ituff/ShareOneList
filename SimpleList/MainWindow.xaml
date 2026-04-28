@@ -19,7 +19,7 @@
                    Width="16" Height="16" 
                    Margin="8, 0"/>
             <TextBlock x:Name="AppTitleTextBlock" 
-                       Text="SimpleList"
+                       Text="ShareOneList"
                        TextWrapping="NoWrap"
                        Style="{StaticResource CaptionTextBlockStyle}" 
                        VerticalAlignment="Center"

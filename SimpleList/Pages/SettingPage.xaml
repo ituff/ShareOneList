@@ -73,8 +73,8 @@
             <TextBlock x:Uid="SettingPage_AboutTitle"
                     FontWeight="Bold"
                     Margin="0 10 0 10"/>
-            <wuc:SettingsExpander Header="SimpleList"
-                    Description="All free for you">
+            <wuc:SettingsExpander Header="ShareOneList"
+                    x:Uid="SettingPage_About">
                 <wuc:SettingsExpander.HeaderIcon>
                     <FontIcon Glyph="&#xE753;"/>
                 </wuc:SettingsExpander.HeaderIcon>
@@ -83,8 +83,8 @@
                         <wuc:SettingsCard.HeaderIcon>
                             <FontIcon Glyph="&#xE943;" />
                         </wuc:SettingsCard.HeaderIcon>
-                        <HyperlinkButton Content="https://github.com/aiguoli/SimpleList"
-                                NavigateUri="https://github.com/aiguoli/SimpleList"/>
+                        <HyperlinkButton Content="https://github.com/ituff/SimpleList21V"
+                                NavigateUri="https://github.com/ituff/SimpleList21V"/>
                     </wuc:SettingsCard>
 
                     <wuc:SettingsCard Header="{x:Bind Version}">
@@ -101,6 +101,13 @@
                             <FontIcon Glyph="&#xE946;" />
                         </wuc:SettingsCard.HeaderIcon>
                         <HyperlinkButton Name="DownloadButton" x:Uid="SettingPage_DownloadUpdate" Click="UpdateByPowershell" Visibility="Collapsed" />
+                    </wuc:SettingsCard>
+                    <wuc:SettingsCard x:Uid="SettingPage_Credits">
+                        <wuc:SettingsCard.HeaderIcon>
+                            <FontIcon Glyph="&#xE006;" />
+                        </wuc:SettingsCard.HeaderIcon>
+                        <HyperlinkButton Content="aiguoli/SimpleList"
+                                NavigateUri="https://github.com/aiguoli/SimpleList"/>
                     </wuc:SettingsCard>
                 </wuc:SettingsExpander.Items>
             </wuc:SettingsExpander>

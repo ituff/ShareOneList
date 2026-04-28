@@ -130,11 +130,11 @@ public partial class App : Application
         var storageProperties =
                 new StorageCreationPropertiesBuilder("OneDriveTokenCache.bin", cacheFolderPath)
                 .WithLinuxKeyring(
-                    "SimpleList.TokenCache",
+                    "ShareOneList.TokenCache",
                     MsalCacheHelper.LinuxKeyRingDefaultCollection,
-                    "MSAL token cache for SimpleList.",
+                    "MSAL token cache for ShareOneList.",
                     new KeyValuePair<string, string>("Version", Utils.GetVersion()),
-                    new KeyValuePair<string, string>("ProductGroup", "SimpleList"))
+                    new KeyValuePair<string, string>("ProductGroup", "ShareOneList"))
                 .Build();
         var cacheHelper = await MsalCacheHelper.CreateAsync(storageProperties).ConfigureAwait(false);
         cacheHelper.VerifyPersistence();
