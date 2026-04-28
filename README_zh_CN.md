@@ -63,7 +63,6 @@ SimpleList 是一个使用 WinUI3 开发的 OneDrive 文件列表应用。
 ![Share](./ScreenShots/Share.png)
 ![ImageViewing](./ScreenShots/ImageViewing.png)
 ![ToolsPage](./ScreenShots/ToolsPage.png)
-![ShareCommunityLinkDetails](./ScreenShots/ShareCommunityLinkDetails.png)
 ![DarkMode](./ScreenShots/DarkMode.png)
 
 # Stargazers over time
