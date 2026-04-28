@@ -55,13 +55,7 @@ namespace SimpleList.Views.Layout
         private async void OpenFile(object sender, DoubleTappedRoutedEventArgs e)
         {
             FileViewModel viewModel = DataContext as FileViewModel;
-            if (viewModel.IsFolder)
-            {
-                await viewModel.Drive.OpenFolder(viewModel);
-            } else
-            {
-                await ShowPreviewDialogFromViewModel(viewModel);
-            }
+            await Helpers.FileOpenHelper.OpenFileAsync(viewModel, XamlRoot);
         }
 
         private async void ShowConverFiletDialogAsync(object sender, RoutedEventArgs e)

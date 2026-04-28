@@ -84,8 +84,10 @@ public partial class FileViewModel : ObservableObject
     public int? ChildrenCount { get => _file.Folder?.ChildCount; }
     public DriveViewModel Drive { get; }
     public string ItemType { get; }
-    public string DownloadUrl { get => _file.AdditionalData["@microsoft.graph.downloadUrl"].ToString(); }
+    public string DownloadUrl { get => _file.AdditionalData.TryGetValue("@microsoft.graph.downloadUrl", out var url) ? url?.ToString() : null; }
+    public string WebUrl { get => _file.WebUrl; }
     public bool CanPreview { get => IsFile && Utils.GetFileType(Path.GetExtension(Name)) != FileType.Unknown; }
+    public FileType PreviewFileType { get => IsFile ? Utils.GetFileType(Path.GetExtension(Name).ToLower()) : FileType.Unknown; }
     public bool CanRename { get => Drive.SelectedItems.Count == 1; }
     // The SDK does not support sharing multiple projects at the same time. But generating multiple links is too stupid.
     public bool CanShare { get => Drive.SelectedItems.Count == 1; }

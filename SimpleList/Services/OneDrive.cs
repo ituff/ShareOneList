@@ -65,6 +65,19 @@ public class OneDrive : OneDriveServiceBase
         }, () => ValidateNotEmpty(itemId, nameof(itemId)));
     }
 
+    /// <summary>
+    /// Get a pre-authenticated preview URL for a file via the Graph preview API.
+    /// Returns an embeddable URL that does not require additional authentication.
+    /// </summary>
+    public async Task<OneDriveResult<ItemPreviewInfo>> GetPreviewUrl(string itemId)
+    {
+        return await ExecuteAsync(async () =>
+        {
+            var requestBody = new Microsoft.Graph.Drives.Item.Items.Item.Preview.PreviewPostRequestBody();
+            return await graphClient.Drives[DriveId].Items[itemId].Preview.PostAsync(requestBody);
+        }, () => ValidateNotEmpty(itemId, nameof(itemId)));
+    }
+
     public async Task<OneDriveResult<DriveItem>> CreateFolder(string parentItemId, string folderName)
     {
         return await ExecuteAsync(async () =>

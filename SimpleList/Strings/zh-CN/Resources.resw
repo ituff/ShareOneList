@@ -465,6 +465,18 @@
   <data name="DriveTabPage_FilesTab" xml:space="preserve">
     <value>文件</value>
   </data>
+  <data name="FileOpen_ConfirmDownload_Title" xml:space="preserve">
+    <value>下载并打开</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Content" xml:space="preserve">
+    <value>此文件类型无法在线预览。是否将"{0}"下载到本地缓存并使用默认应用程序打开？</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Confirm" xml:space="preserve">
+    <value>下载并打开</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
   <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
     <value>没有共享的文档库</value>
   </data>

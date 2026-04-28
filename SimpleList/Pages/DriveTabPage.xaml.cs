@@ -112,6 +112,38 @@ namespace SimpleList.Pages
         }
 
         /// <summary>
+        /// Add a new preview tab for a file and select it.
+        /// </summary>
+        public void AddPreviewTab(FileViewModel file)
+        {
+            var frame = new Frame();
+            frame.Navigated += TabFrame_Navigated;
+
+            var tabItem = new TabViewItem
+            {
+                Header = file.Name,
+                IconSource = new SymbolIconSource { Symbol = Symbol.Preview }
+            };
+
+            var state = new TabState
+            {
+                Drive = file.Drive,
+                Frame = frame,
+                TabItem = tabItem,
+                IsFixed = false
+            };
+            _tabStates[tabItem] = state;
+
+            frame.Visibility = Visibility.Collapsed;
+            FrameContainer.Children.Add(frame);
+
+            DriveTabView.TabItems.Add(tabItem);
+            DriveTabView.SelectedItem = tabItem;
+
+            frame.Navigate(typeof(PreviewPage), file);
+        }
+
+        /// <summary>
         /// Select the CloudPage tab.
         /// </summary>
         public void SelectCloudTab()
