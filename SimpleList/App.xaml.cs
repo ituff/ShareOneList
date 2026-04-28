@@ -51,12 +51,12 @@ public partial class App : Application
             LogError("UI Thread Exception", sender, args.Exception);
             args.Handled = true;
         };
-        LogError("UI Thread Exception", new object { }, new Exception());
+
     }
 
     public static void LogError(string title, object sender, Exception exception)
     {
-        var logFilePath = Path.Combine(Environment.CurrentDirectory, "error.log");
+        var logFilePath = Path.Combine(AppContext.BaseDirectory, "error.log");
         var logMessage = $"{DateTime.Now}: {title}\n{sender}\n{exception}\n\n";
 
         File.AppendAllText(logFilePath, logMessage);
@@ -100,7 +100,11 @@ public partial class App : Application
 
     private void LoadSettings()
     {
-        Configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
+        string basePath = AppContext.BaseDirectory;
+        Configuration = new ConfigurationBuilder()
+            .SetBasePath(basePath)
+            .AddJsonFile("appsettings.json")
+            .Build();
     }
 
     public static IPublicClientApplication BuildPublicApp(CloudType cloudType)
@@ -126,7 +130,7 @@ public partial class App : Application
 
     private static async Task<MsalCacheHelper> GetCacheHelper()
     {
-        string cacheFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "cache");
+        string cacheFolderPath = Path.Combine(AppContext.BaseDirectory, "cache");
         var storageProperties =
                 new StorageCreationPropertiesBuilder("OneDriveTokenCache.bin", cacheFolderPath)
                 .WithLinuxKeyring(

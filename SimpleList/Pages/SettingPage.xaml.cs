@@ -84,7 +84,7 @@ namespace SimpleList.Pages
                 return;
             }
             // Extract Zip using powershell
-            var destinationDirectory = Environment.CurrentDirectory;
+            var destinationDirectory = AppContext.BaseDirectory;
             string script = $@"Expand-Archive -Path '{zipFile}' -DestinationPath '{destinationDirectory}' -Force";
             Process.Start("PowerShell", script);
         }
@@ -96,12 +96,13 @@ namespace SimpleList.Pages
                 return;
             }
             var zipFile = Path.Combine(Path.GetTempPath(), $@"{Path.GetRandomFileName()}.zip");
+            string appDir = AppContext.BaseDirectory;
             string psScript = $@"
                 Stop-Process -Name '{Process.GetCurrentProcess().ProcessName}' -Force
                 Start-BitsTransfer -Source '{zipballUrl}' -Destination '{zipFile}' -DisplayName 'ShareOneList Update'
-                Expand-Archive -Path '{zipFile}' -DestinationPath '{Environment.CurrentDirectory}' -Force
+                Expand-Archive -Path '{zipFile}' -DestinationPath '{appDir}' -Force
                 Remove-Item -Path {zipFile}
-                Start-Process '{Path.Combine(Environment.CurrentDirectory, "ShareOneList.exe")}'
+                Start-Process '{Path.Combine(appDir, "ShareOneList.exe")}'
                 Pause
             ";
             Process.Start("PowerShell", psScript);

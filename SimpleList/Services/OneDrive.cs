@@ -352,43 +352,45 @@ public class OneDrive : OneDriveServiceBase
     private async Task LoginInternal()
     {
         string[] currentScopes = CloudTypeConfig.GetScopes(CloudType);
+
+        // Acquire token eagerly so the login actually happens now
+        await AcquireTokenAsync(currentScopes);
+
         TokenProvider tokenProvider = new(async Task<string> (string[] scopes) =>
         {
-            IEnumerable<IAccount> accounts = await PublicClientApp.GetAccountsAsync().ConfigureAwait(false);
-
-            try
-            {
-                authResult = await PublicClientApp
-                                .AcquireTokenSilent(scopes, accounts.First(account => account.HomeAccountId.Identifier == HomeAccountId))
-                                .ExecuteAsync();
-            }
-            catch (Exception exception) when (exception is MsalUiRequiredException || exception is InvalidOperationException)
-            {
-                try
-                {
-                    authResult = await PublicClientApp.AcquireTokenInteractive(scopes).ExecuteAsync();
-                }
-                catch (MsalException msalex)
-                {
-                    Console.WriteLine(msalex);
-                }
-                catch (Exception odataEx)
-                {
-                    Debug.WriteLine($"OData Error: {odataEx}");
-                }
-            }
-            if (authResult != null)
-            {
-                IsAuthenticated = true;
-            }
-            HomeAccountId = authResult?.Account.HomeAccountId.Identifier;
+            // For subsequent token requests, try silent first then interactive
+            await AcquireTokenAsync(scopes);
             return authResult?.AccessToken;
         }, currentScopes);
         BaseBearerTokenAuthenticationProvider authProvider = new(tokenProvider);
         string graphBaseUrl = CloudTypeConfig.GetGraphBaseUrl(CloudType);
         graphClient = new(authProvider, graphBaseUrl);
-        await Task.FromResult(graphClient);
         SaveTokenCache();
+    }
+
+    private async Task AcquireTokenAsync(string[] scopes)
+    {
+        IEnumerable<IAccount> accounts = await PublicClientApp.GetAccountsAsync().ConfigureAwait(false);
+
+        try
+        {
+            authResult = await PublicClientApp
+                            .AcquireTokenSilent(scopes, accounts.FirstOrDefault(account => account.HomeAccountId.Identifier == HomeAccountId))
+                            .ExecuteAsync();
+        }
+        catch (Exception exception) when (exception is MsalUiRequiredException || exception is InvalidOperationException)
+        {
+            IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.StartupWindow);
+            authResult = await PublicClientApp.AcquireTokenInteractive(scopes)
+                            .WithParentActivityOrWindow(hwnd)
+                            .ExecuteAsync();
+        }
+
+        if (authResult != null)
+        {
+            IsAuthenticated = true;
+            HomeAccountId = authResult.Account.HomeAccountId.Identifier;
+        }
     }
 
     /// <summary>

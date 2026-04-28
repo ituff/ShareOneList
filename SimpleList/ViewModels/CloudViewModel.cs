@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using SimpleList.Models.DTO;
 using SimpleList.Services;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -55,7 +56,7 @@ namespace SimpleList.ViewModels
                 drives.Add(driveDTO);
             }
             string jsonData = JsonSerializer.Serialize(drives, DriveDTOSourceGenerationContext.Default.ListDriveDTO);
-            string cachePath = Path.Combine(Directory.GetCurrentDirectory(), "cache");
+            string cachePath = Path.Combine(AppContext.BaseDirectory, "cache");
             Directory.CreateDirectory(cachePath);
             await File.WriteAllTextAsync(cacheFilePath, jsonData);
         }
@@ -75,7 +76,7 @@ namespace SimpleList.ViewModels
             isCacheLoaded = true;
         }
 
-        private readonly string cacheFilePath = Path.Combine(Directory.GetCurrentDirectory(), "cache", "drives.json");
+        private readonly string cacheFilePath = Path.Combine(AppContext.BaseDirectory, "cache", "drives.json");
         private bool isCacheLoaded = false;
         [ObservableProperty] private ObservableCollection<DriveViewModel> drives = [];
     }
