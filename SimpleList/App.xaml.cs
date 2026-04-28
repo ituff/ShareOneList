@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.UI.Xaml;
+using SimpleList.Models;
 using SimpleList.Services;
 using SimpleList.ViewModels;
 using System;
@@ -94,7 +95,6 @@ public partial class App : Application
         services.AddSingleton<IThemeService, ThemeService>();
         services.AddSingleton<TaskManagerViewModel>();
         services.AddSingleton(CacheHelper);
-        services.AddSingleton(BuildPublicApp());
         return services.BuildServiceProvider();
     }
 
@@ -103,16 +103,24 @@ public partial class App : Application
         Configuration = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
     }
 
-    private IPublicClientApplication BuildPublicApp()
+    public static IPublicClientApplication BuildPublicApp(CloudType cloudType)
     {
-        IPublicClientApplication publicClientApp = PublicClientApplicationBuilder.Create(Configuration.GetSection("AzureAD:ClientId").Value)
+        string clientId = Current.Configuration.GetSection($"AzureAD:{cloudType}:ClientId").Value;
+        string authority = CloudTypeConfig.GetAuthority(cloudType);
+
+        IPublicClientApplication publicClientApp = PublicClientApplicationBuilder.Create(clientId)
             .WithClientName(Assembly.GetEntryAssembly().GetName().Name)
+            .WithAuthority(authority)
             .WithRedirectUri("http://localhost")
             .WithLogging((level, message, containsPii) =>
             {
                 Debug.WriteLine($"MSAL: {level} {message}");
             }, LogLevel.Verbose, enablePiiLogging: true, enableDefaultPlatformLogging: true)
             .Build();
+
+        MsalCacheHelper cacheHelper = GetService<MsalCacheHelper>();
+        cacheHelper.RegisterCache(publicClientApp.UserTokenCache);
+
         return publicClientApp;
     }
 

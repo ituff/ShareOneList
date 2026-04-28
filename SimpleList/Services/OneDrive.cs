@@ -3,7 +3,6 @@ using Microsoft.Graph.Drives.Item.Items.Item.Restore;
 using Microsoft.Graph.Drives.Item.Items.Item.SearchWithQ;
 using Microsoft.Graph.Models;
 using Microsoft.Identity.Client;
-using Microsoft.Identity.Client.Extensions.Msal;
 using Microsoft.Kiota.Abstractions.Authentication;
 using SimpleList.Helpers;
 using SimpleList.Models;
@@ -20,16 +19,18 @@ namespace SimpleList.Services;
 
 public class OneDrive : OneDriveServiceBase
 {
-    public OneDrive()
+    public OneDrive(CloudType cloudType)
     {
-        PublicClientApp = App.GetService<IPublicClientApplication>();
+        CloudType = cloudType;
+        PublicClientApp = App.BuildPublicApp(cloudType);
     }
 
-    public OneDrive(string driveId, string homeAccountId)
+    public OneDrive(string driveId, string homeAccountId, CloudType cloudType)
     {
         DriveId = driveId;
         HomeAccountId = homeAccountId;
-        PublicClientApp = App.GetService<IPublicClientApplication>();
+        CloudType = cloudType;
+        PublicClientApp = App.BuildPublicApp(cloudType);
     }
 
     public async Task<OneDriveResult<DriveItemCollectionResponse>> GetFiles(string parentId = "Root")
@@ -337,6 +338,7 @@ public class OneDrive : OneDriveServiceBase
 
     private async Task LoginInternal()
     {
+        string[] currentScopes = CloudTypeConfig.GetScopes(CloudType);
         TokenProvider tokenProvider = new(async Task<string> (string[] scopes) =>
         {
             IEnumerable<IAccount> accounts = await PublicClientApp.GetAccountsAsync().ConfigureAwait(false);
@@ -368,9 +370,10 @@ public class OneDrive : OneDriveServiceBase
             }
             HomeAccountId = authResult?.Account.HomeAccountId.Identifier;
             return authResult?.AccessToken;
-        }, scopes);
+        }, currentScopes);
         BaseBearerTokenAuthenticationProvider authProvider = new(tokenProvider);
-        graphClient = new(authProvider);
+        string graphBaseUrl = CloudTypeConfig.GetGraphBaseUrl(CloudType);
+        graphClient = new(authProvider, graphBaseUrl);
         await Task.FromResult(graphClient);
         SaveTokenCache();
         try
@@ -378,20 +381,21 @@ public class OneDrive : OneDriveServiceBase
             Drive driveItem = await graphClient.Me.Drive.GetAsync();
             DriveId = driveItem.Id;
         }
-        catch
+        catch (Exception ex)
         {
-                
+            Debug.WriteLine($"Failed to get DriveId: {ex}");
+            // If /me/drive fails, the DriveId remains empty and subsequent calls will fail.
+            // Re-throw so the caller knows login didn't fully succeed.
+            throw new Exception($"Failed to get drive info: {ex.Message}", ex);
         }
     }
 
     public static void SaveTokenCache()
     {
-        MsalCacheHelper cacheHelper = App.GetService<MsalCacheHelper>();
-        cacheHelper.RegisterCache(PublicClientApp.UserTokenCache);
+        // Cache registration is now handled in App.BuildPublicApp
     }
 
-    private static IPublicClientApplication PublicClientApp;
-    private readonly string[] scopes = ["User.Read", "Files.ReadWrite.All"];
+    private IPublicClientApplication PublicClientApp;
     private static AuthenticationResult authResult;
     private GraphServiceClient graphClient;
 
@@ -400,6 +404,7 @@ public class OneDrive : OneDriveServiceBase
     public string ClientId;
     // used for identify account for now
     public string HomeAccountId;
+    public CloudType CloudType;
 
     protected override async Task EnsureAuthenticatedAsync()
     {

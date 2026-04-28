@@ -17,7 +17,7 @@ public sealed partial class ExternalDownloader : Page
     if (string.IsNullOrEmpty(InputUrlBox.Text)) return;
     if (Uri.TryCreate(InputUrlBox.Text, UriKind.Absolute, out Uri shareUrl))
     {
-      if (shareUrl.Host.EndsWith("sharepoint.com"))
+      if (shareUrl.Host.EndsWith("sharepoint.com") || shareUrl.Host.EndsWith("sharepoint.cn"))
       {
 
       }

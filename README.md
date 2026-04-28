@@ -12,7 +12,24 @@ Unzip and then double click
 
 # Settings
 
-Modify `SimpleList/appsettings.json` to customize the configuration. 
+Modify `SimpleList/appsettings.json` to customize the configuration.
+
+You can set separate Azure AD Client IDs for Global (International) and China (21Vianet) environments:
+
+```json
+{
+  "AzureAD": {
+    "Global": {
+      "ClientId": "your-global-client-id"
+    },
+    "China": {
+      "ClientId": "your-china-client-id"
+    }
+  }
+}
+```
+
+> **Note:** The Global and China versions of Azure AD are completely independent. You need to register your application separately on [portal.azure.com](https://portal.azure.com) (Global) and [portal.azure.cn](https://portal.azure.cn) (China/21Vianet).
 
 # Features
 
@@ -33,6 +50,7 @@ Modify `SimpleList/appsettings.json` to customize the configuration.
 - [x] Multiple accounts
 - [x] i18n
 - [x] Tools page
+- [x] Support for Microsoft 365 operated by 21Vianet (China) and Global (International)
 
 # Screenshots(may not be the latest version)
 

@@ -48,7 +48,8 @@ namespace SimpleList.ViewModels
                     Provider = new()
                     {
                         HomeAccountId = drive.Provider.HomeAccountId,
-                        DriveId = drive.Provider.DriveId
+                        DriveId = drive.Provider.DriveId,
+                        CloudType = drive.Provider.CloudType
                     }
                 };
                 drives.Add(driveDTO);
@@ -67,7 +68,7 @@ namespace SimpleList.ViewModels
                 List<DriveDTO> drives = JsonSerializer.Deserialize(jsonData, DriveDTOSourceGenerationContext.Default.ListDriveDTO);
                 foreach (DriveDTO drive in drives)
                 {
-                    OneDrive provider = new(drive.Provider.DriveId, drive.Provider.HomeAccountId);
+                    OneDrive provider = new(drive.Provider.DriveId, drive.Provider.HomeAccountId, drive.Provider.CloudType);
                     Drives.Add(new DriveViewModel(provider, drive.DisplayName));
                 }
             }

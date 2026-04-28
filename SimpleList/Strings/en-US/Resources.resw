@@ -456,4 +456,28 @@
   <data name="PropertyViews_ChildrenCount.Text" xml:space="preserve">
     <value>ChildrenCount</value>
   </data>
+  <data name="CreateDrive_Dialog.Title" xml:space="preserve">
+    <value>Create Drive</value>
+  </data>
+  <data name="CreateDrive_Dialog.PrimaryButtonText" xml:space="preserve">
+    <value>Create</value>
+  </data>
+  <data name="CreateDrive_Dialog.CloseButtonText" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="CreateDrive_DisplayName.Header" xml:space="preserve">
+    <value>Display Name (Optional)</value>
+  </data>
+  <data name="CreateDrive_DisplayName.PlaceholderText" xml:space="preserve">
+    <value>Drive Name</value>
+  </data>
+  <data name="CreateDrive_CloudType.Header" xml:space="preserve">
+    <value>Cloud Type</value>
+  </data>
+  <data name="CreateDrive_CloudType_China.Content" xml:space="preserve">
+    <value>China (21Vianet)</value>
+  </data>
+  <data name="CreateDrive_CloudType_Global.Content" xml:space="preserve">
+    <value>Global (International)</value>
+  </data>
 </root>
