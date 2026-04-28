@@ -376,18 +376,47 @@ public class OneDrive : OneDriveServiceBase
         graphClient = new(authProvider, graphBaseUrl);
         await Task.FromResult(graphClient);
         SaveTokenCache();
-        try
+    }
+
+    /// <summary>
+    /// Get the current user's OneDrive. Returns null data if user has no OneDrive license.
+    /// </summary>
+    public async Task<OneDriveResult<Drive>> GetMyDrive()
+    {
+        return await ExecuteAsync(async () =>
         {
-            Drive driveItem = await graphClient.Me.Drive.GetAsync();
-            DriveId = driveItem.Id;
-        }
-        catch (Exception ex)
+            return await graphClient.Me.Drive.GetAsync();
+        });
+    }
+
+    /// <summary>
+    /// Get SharePoint sites the user has access to via search.
+    /// </summary>
+    public async Task<OneDriveResult<SiteCollectionResponse>> GetSharePointSites()
+    {
+        return await ExecuteAsync(async () =>
         {
-            Debug.WriteLine($"Failed to get DriveId: {ex}");
-            // If /me/drive fails, the DriveId remains empty and subsequent calls will fail.
-            // Re-throw so the caller knows login didn't fully succeed.
-            throw new Exception($"Failed to get drive info: {ex.Message}", ex);
-        }
+            return await graphClient.Sites.GetAsync(config =>
+            {
+                config.QueryParameters.Search = "*";
+            });
+        });
+    }
+
+    /// <summary>
+    /// Get all drives (document libraries) for a given SharePoint site.
+    /// </summary>
+    public async Task<OneDriveResult<DriveCollectionResponse>> GetSiteDrives(string siteId)
+    {
+        return await ExecuteAsync(async () =>
+        {
+            return await graphClient.Sites[siteId].Drives.GetAsync();
+        }, () => ValidateNotEmpty(siteId, nameof(siteId)));
+    }
+
+    public void SetDriveId(string driveId)
+    {
+        DriveId = driveId;
     }
 
     public static void SaveTokenCache()

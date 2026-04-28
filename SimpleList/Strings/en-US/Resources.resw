@@ -480,4 +480,19 @@
   <data name="CreateDrive_CloudType_Global.Content" xml:space="preserve">
     <value>Global (International)</value>
   </data>
+  <data name="DriveHubPage_Back.Text" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="DriveHubPage_NoOneDrive" xml:space="preserve">
+    <value>No OneDrive</value>
+  </data>
+  <data name="DriveHubPage_NoOneDriveDesc" xml:space="preserve">
+    <value>This account does not have a OneDrive license.</value>
+  </data>
+  <data name="DriveHubPage_NoSharePoint" xml:space="preserve">
+    <value>No SharePoint Sites</value>
+  </data>
+  <data name="DriveHubPage_NoSharePointDesc" xml:space="preserve">
+    <value>No SharePoint sites found for this account.</value>
+  </data>
 </root>

@@ -30,8 +30,12 @@ public static class CloudTypeConfig
     {
         return cloudType switch
         {
-            CloudType.China => ["https://microsoftgraph.chinacloudapi.cn/User.Read", "https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.All"],
-            _ => ["User.Read", "Files.ReadWrite.All"]
+            CloudType.China => [
+                "https://microsoftgraph.chinacloudapi.cn/User.Read",
+                "https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.All",
+                "https://microsoftgraph.chinacloudapi.cn/Sites.Read.All"
+            ],
+            _ => ["User.Read", "Files.ReadWrite.All", "Sites.Read.All"]
         };
     }
 
