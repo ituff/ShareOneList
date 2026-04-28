@@ -493,6 +493,15 @@
     <value>No SharePoint Sites</value>
   </data>
   <data name="DriveHubPage_NoSharePointDesc" xml:space="preserve">
-    <value>No SharePoint sites found for this account.</value>
+    <value>No SharePoint sites found. For 21Vianet accounts, please follow sites in SharePoint first.</value>
+  </data>
+  <data name="DriveHubPage_SharedWithMe.Text" xml:space="preserve">
+    <value>Shared with me</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
+    <value>No Shared Libraries</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrivesDesc" xml:space="preserve">
+    <value>No shared document libraries found for this account.</value>
   </data>
 </root>

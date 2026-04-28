@@ -390,16 +390,50 @@ public class OneDrive : OneDriveServiceBase
     }
 
     /// <summary>
-    /// Get SharePoint sites the user has access to via search.
+    /// Get SharePoint sites the user has access to.
+    /// For 21Vianet (China): gets sites via user's joined M365 groups (since search=* and followedSites are not reliably supported).
+    /// For Global: uses /sites?search=*.
     /// </summary>
-    public async Task<OneDriveResult<SiteCollectionResponse>> GetSharePointSites()
+    public async Task<OneDriveResult<List<Site>>> GetSharePointSites()
     {
+        if (CloudType == CloudType.China)
+        {
+            return await ExecuteAsync(async () =>
+            {
+                // Get user's M365 groups, each has an associated SharePoint site
+                var groups = await graphClient.Me.MemberOf.GetAsync();
+                var sites = new List<Site>();
+                if (groups?.Value != null)
+                {
+                    foreach (var obj in groups.Value)
+                    {
+                        if (obj is Group group && group.GroupTypes?.Contains("Unified") == true)
+                        {
+                            try
+                            {
+                                var site = await graphClient.Groups[group.Id].Sites["root"].GetAsync();
+                                if (site != null)
+                                {
+                                    sites.Add(site);
+                                }
+                            }
+                            catch
+                            {
+                                // Skip groups without a SharePoint site
+                            }
+                        }
+                    }
+                }
+                return sites;
+            });
+        }
         return await ExecuteAsync(async () =>
         {
-            return await graphClient.Sites.GetAsync(config =>
+            var result = await graphClient.Sites.GetAsync(config =>
             {
                 config.QueryParameters.Search = "*";
             });
+            return result?.Value ?? new List<Site>();
         });
     }
 
@@ -412,6 +446,47 @@ public class OneDrive : OneDriveServiceBase
         {
             return await graphClient.Sites[siteId].Drives.GetAsync();
         }, () => ValidateNotEmpty(siteId, nameof(siteId)));
+    }
+
+    /// <summary>
+    /// Discover SharePoint document libraries the user has access to via sharedWithMe.
+    /// Requires the user to have a OneDrive license.
+    /// Extracts unique driveIds from shared items and resolves each to a Drive object.
+    /// </summary>
+    public async Task<OneDriveResult<List<Drive>>> GetSharedDrives()
+    {
+        return await ExecuteAsync(async () =>
+        {
+            // First get the user's drive id - this requires OneDrive license
+            var myDrive = await graphClient.Me.Drive.GetAsync();
+            var sharedItems = await graphClient.Drives[myDrive.Id].SharedWithMe.GetAsSharedWithMeGetResponseAsync();
+            var driveIds = new HashSet<string>();
+            var drives = new List<Drive>();
+
+            if (sharedItems?.Value != null)
+            {
+                foreach (var item in sharedItems.Value)
+                {
+                    string remoteDriveId = item.RemoteItem?.ParentReference?.DriveId;
+                    if (!string.IsNullOrEmpty(remoteDriveId) && driveIds.Add(remoteDriveId))
+                    {
+                        try
+                        {
+                            var drive = await graphClient.Drives[remoteDriveId].GetAsync();
+                            if (drive != null)
+                            {
+                                drives.Add(drive);
+                            }
+                        }
+                        catch
+                        {
+                            // Skip drives we can't access
+                        }
+                    }
+                }
+            }
+            return drives;
+        });
     }
 
     public void SetDriveId(string driveId)

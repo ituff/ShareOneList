@@ -493,6 +493,15 @@
     <value>没有 SharePoint 站点</value>
   </data>
   <data name="DriveHubPage_NoSharePointDesc" xml:space="preserve">
-    <value>未找到此账户可访问的 SharePoint 站点。</value>
+    <value>未找到 SharePoint 站点。世纪互联账户需要先在 SharePoint 中关注站点。</value>
+  </data>
+  <data name="DriveHubPage_SharedWithMe.Text" xml:space="preserve">
+    <value>与我共享</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
+    <value>没有共享的文档库</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrivesDesc" xml:space="preserve">
+    <value>未找到与此账户共享的文档库。</value>
   </data>
 </root>

@@ -33,9 +33,10 @@ public static class CloudTypeConfig
             CloudType.China => [
                 "https://microsoftgraph.chinacloudapi.cn/User.Read",
                 "https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.All",
-                "https://microsoftgraph.chinacloudapi.cn/Sites.Read.All"
+                "https://microsoftgraph.chinacloudapi.cn/Sites.Read.All",
+                "https://microsoftgraph.chinacloudapi.cn/Group.Read.All"
             ],
-            _ => ["User.Read", "Files.ReadWrite.All", "Sites.Read.All"]
+            _ => ["User.Read", "Files.ReadWrite.All", "Sites.Read.All", "Group.Read.All"]
         };
     }
 
