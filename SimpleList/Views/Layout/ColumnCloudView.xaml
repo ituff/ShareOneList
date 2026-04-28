@@ -5,21 +5,24 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:SimpleList.ViewModels"
     xmlns:views="using:SimpleList.Views.Layout"
+    xmlns:converter="using:SimpleList.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     d:DataContext="{x:Bind vm:DriveViewModel}"
     mc:Ignorable="d">
 
     <UserControl.Resources>
+        <converter:BoolToSelectionModeConverter x:Key="SelectionModeConverter" />
         <DataTemplate x:Key="ListItemTemplate" x:DataType="vm:FileViewModel">
             <views:ColumnFileView DataContext="{Binding}" />
         </DataTemplate>
     </UserControl.Resources>
 
     <ListView 
+        x:Name="FileListView"
         ItemsSource="{Binding Files}" 
         ItemTemplate="{StaticResource ListItemTemplate}"
-        SelectionMode="Extended"
+        SelectionMode="{Binding IsSelectionMode, Converter={StaticResource SelectionModeConverter}}"
         SelectionChanged="ChangeSelectedFiles"
     />
 </UserControl>

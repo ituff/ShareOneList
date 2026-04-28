@@ -33,6 +33,8 @@ public partial class DriveViewModel : ObservableObject
         itemId ??= _parentItemId;
         IsLoading = Visibility.Visible;
         _parentItemId = itemId;
+        SelectedItems.Clear();
+        HasSelectedItems = false;
         OneDriveResult<DriveItemCollectionResponse> result = await Provider.GetFiles(itemId);
         if (result.IsSuccess)
         {
@@ -159,6 +161,8 @@ public partial class DriveViewModel : ObservableObject
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     [ObservableProperty] private Visibility _isLoading = Visibility.Collapsed;
     [ObservableProperty] private string _storageInfo;
+    [ObservableProperty] private bool _isSelectionMode = false;
+    [ObservableProperty] private bool _hasSelectedItems = false;
 
     public ObservableCollection<FileViewModel> Files { get; } = [];
     public ObservableCollection<FileViewModel> Images { get; } = [];
@@ -167,4 +171,18 @@ public partial class DriveViewModel : ObservableObject
     public string ParentItemId => _parentItemId;
     public OneDrive Provider { get; }
     public string DisplayName { get; }
+
+    partial void OnIsSelectionModeChanged(bool value)
+    {
+        if (!value)
+        {
+            SelectedItems.Clear();
+            HasSelectedItems = false;
+        }
+    }
+
+    public void UpdateSelectionState()
+    {
+        HasSelectedItems = SelectedItems.Count > 0;
+    }
 }

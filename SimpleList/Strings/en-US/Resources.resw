@@ -516,4 +516,13 @@
   <data name="DriveHubPage_NoSharedDrivesDesc" xml:space="preserve">
     <value>No shared document libraries found for this account.</value>
   </data>
+  <data name="DrivePage_SelectMode.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Selection Mode</value>
+  </data>
+  <data name="DrivePage_BatchDownload.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Download Selected</value>
+  </data>
+  <data name="DrivePage_BatchDownloadText.Text" xml:space="preserve">
+    <value>Download</value>
+  </data>
 </root>
