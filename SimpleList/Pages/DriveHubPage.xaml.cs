@@ -36,6 +36,28 @@ namespace SimpleList.Pages
             }
         }
 
+        /// <summary>
+        /// Navigate via the parent DriveTabPage's inner frame, or fall back to main frame.
+        /// </summary>
+        private void NavigateToPage(Type pageType, object parameter)
+        {
+            var tabPage = FindParentDriveTabPage();
+            if (tabPage != null)
+            {
+                tabPage.NavigateInner(pageType, parameter);
+            }
+            else
+            {
+                (App.StartupWindow as MainWindow).Navigate(pageType, parameter);
+            }
+        }
+
+        private DriveTabPage FindParentDriveTabPage()
+        {
+            // DriveTabPage instance is cached in MainWindow
+            return (App.StartupWindow as MainWindow).DriveTabPage;
+        }
+
         private async void OneDrive_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
         {
             LoadingBar.Visibility = Visibility.Visible;
@@ -46,7 +68,7 @@ namespace SimpleList.Pages
             {
                 _provider.SetDriveId(result.Data.Id);
                 DriveViewModel driveVm = new(_provider, _displayName);
-                (App.StartupWindow as MainWindow).Navigate(typeof(DrivePage), driveVm);
+                NavigateToPage(typeof(DrivePage), driveVm);
             }
             else
             {
@@ -150,7 +172,7 @@ namespace SimpleList.Pages
                     // Only one drive, go directly to it
                     _provider.SetDriveId(drives[0].Id);
                     DriveViewModel driveVm = new(_provider, drives[0].Name);
-                    (App.StartupWindow as MainWindow).Navigate(typeof(DrivePage), driveVm);
+                    NavigateToPage(typeof(DrivePage), driveVm);
                 }
                 else
                 {
@@ -177,7 +199,7 @@ namespace SimpleList.Pages
 
             _provider.SetDriveId(drive.Id);
             DriveViewModel driveVm = new(_provider, drive.Name);
-            (App.StartupWindow as MainWindow).Navigate(typeof(DrivePage), driveVm);
+            NavigateToPage(typeof(DrivePage), driveVm);
         }
 
         private void BackToHub(object sender, RoutedEventArgs e)

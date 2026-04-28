@@ -498,6 +498,18 @@
   <data name="DriveHubPage_SharedWithMe.Text" xml:space="preserve">
     <value>Shared with me</value>
   </data>
+  <data name="DriveTabPage_Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="DriveTabPage_Forward" xml:space="preserve">
+    <value>Forward</value>
+  </data>
+  <data name="DriveTabPage_Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="DriveTabPage_FilesTab" xml:space="preserve">
+    <value>Files</value>
+  </data>
   <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
     <value>No Shared Libraries</value>
   </data>
