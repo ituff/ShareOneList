@@ -68,9 +68,9 @@ namespace SimpleList.Pages
             var result = await _provider.GetSharePointSites();
             LoadingBar.Visibility = Visibility.Collapsed;
 
-            if (result.IsSuccess && result.Data?.Value != null)
+            if (result.IsSuccess && result.Data != null)
             {
-                _sites = result.Data.Value;
+                _sites = result.Data;
                 if (_sites.Count == 0)
                 {
                     Growl.Warning(new GrowlInfo
@@ -85,6 +85,42 @@ namespace SimpleList.Pages
                 SitesList.ItemsSource = _sites;
                 ServicePanel.Visibility = Visibility.Collapsed;
                 SharePointPanel.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                Growl.Error(new GrowlInfo
+                {
+                    Title = ResourceHelper.GetLocalized("Error"),
+                    Message = result.ErrorMessage,
+                    StaysOpen = false,
+                    Token = "HubGrowl"
+                });
+            }
+        }
+
+        private async void SharedWithMe_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        {
+            LoadingBar.Visibility = Visibility.Visible;
+            var result = await _provider.GetSharedDrives();
+            LoadingBar.Visibility = Visibility.Collapsed;
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                var drives = result.Data;
+                if (drives.Count == 0)
+                {
+                    Growl.Warning(new GrowlInfo
+                    {
+                        Title = ResourceHelper.GetLocalized("DriveHubPage_NoSharedDrives"),
+                        Message = ResourceHelper.GetLocalized("DriveHubPage_NoSharedDrivesDesc"),
+                        StaysOpen = false,
+                        Token = "HubGrowl"
+                    });
+                    return;
+                }
+                DrivesList.ItemsSource = drives;
+                ServicePanel.Visibility = Visibility.Collapsed;
+                DrivesPanel.Visibility = Visibility.Visible;
             }
             else
             {
@@ -154,7 +190,7 @@ namespace SimpleList.Pages
         private void BackToSites(object sender, RoutedEventArgs e)
         {
             DrivesPanel.Visibility = Visibility.Collapsed;
-            SharePointPanel.Visibility = Visibility.Visible;
+            ServicePanel.Visibility = Visibility.Visible;
         }
     }
 }
