@@ -516,4 +516,13 @@
   <data name="DriveHubPage_NoSharedDrivesDesc" xml:space="preserve">
     <value>未找到与此账户共享的文档库。</value>
   </data>
+  <data name="DrivePage_SelectMode.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>选择模式</value>
+  </data>
+  <data name="DrivePage_BatchDownload.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>下载选中项</value>
+  </data>
+  <data name="DrivePage_BatchDownloadText.Text" xml:space="preserve">
+    <value>下载</value>
+  </data>
 </root>

@@ -1,20 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+using SimpleList.ViewModels;
+using System.Linq;
 
 namespace SimpleList.Views.Layout
 {
@@ -22,7 +8,19 @@ namespace SimpleList.Views.Layout
     {
         public GridCloudView()
         {
-            this.InitializeComponent();
+            InitializeComponent();
+        }
+
+        private void ChangeSelectedFiles(object sender, SelectionChangedEventArgs e)
+        {
+            var drive = DataContext as DriveViewModel;
+            if (drive?.SelectedItems == null) return;
+            drive.SelectedItems.Clear();
+            foreach (FileViewModel item in (sender as GridView).SelectedItems.Cast<FileViewModel>())
+            {
+                drive.SelectedItems.Add(item);
+            }
+            drive.UpdateSelectionState();
         }
     }
 }
