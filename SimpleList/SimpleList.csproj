@@ -40,7 +40,6 @@
     <None Remove="Assets\EmptyFolder.png" />
     <None Remove="Assets\File.png" />
     <None Remove="Assets\Folder.png" />
-    <None Remove="Assets\link-share.png" />
     <None Remove="Controls\ItemCard.xaml" />
     <None Remove="Pages\BookmarkPage.xaml" />
     <None Remove="Pages\CloudPage.xaml" />
@@ -52,7 +51,6 @@
     <None Remove="Pages\TaskManagerPage.xaml" />
     <None Remove="Pages\ToolPage.xaml" />
     <None Remove="Pages\Tools\ExternalDownloader.xaml" />
-    <None Remove="Pages\Tools\ShareCommunity.xaml" />
     <None Remove="Views\ConvertFileFormatView.xaml" />
     <None Remove="Views\CreateDrive.xaml" />
     <None Remove="Views\CreateFolderView.xaml" />
@@ -70,8 +68,6 @@
     <None Remove="Views\RenameFileView.xaml" />
     <None Remove="Views\SearchView.xaml" />
     <None Remove="Views\ShareFileView.xaml" />
-    <None Remove="Views\Tools\CreateLink.xaml" />
-    <None Remove="Views\Tools\LinkDetails.xaml" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
@@ -115,9 +111,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Update="Assets\Folder.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Update="Assets\link-share.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Update="Assets\logo.png">
@@ -172,15 +165,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Pages\DriveTabPage.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Update="Views\Tools\CreateLink.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Update="Views\Tools\LinkDetails.xaml">
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Update="Pages\Tools\ShareCommunity.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Update="Controls\ItemCard.xaml">

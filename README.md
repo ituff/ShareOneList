@@ -63,7 +63,6 @@ You can set separate Azure AD Client IDs for Global (International) and China (2
 ![Sahre](./ScreenShots/Share.png)
 ![ImageViewing](./ScreenShots/ImageViewing.png)
 ![ToolsPage](./ScreenShots/ToolsPage.png)
-![ShareCommunityLinkDetails](./ScreenShots/ShareCommunityLinkDetails.png)
 ![DarkMode](./ScreenShots/DarkMode.png)
 
 # Stargazers over time

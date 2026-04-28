@@ -30,12 +30,6 @@ namespace SimpleList.Pages
 
         private IEnumerable<ToolItem> _items = [
             new() {
-                Name = "Share Community",
-                Description = "Share and browse OneDrive files",
-                ImagePath = "/Assets/link-share.png",
-                FileName = "ShareCommunity"
-            },
-            new() {
                 Name = "External Downloader",
                 Description = "Downlaod files with external downloader.",
                 ImagePath = "/Assets/external-downloader.png",

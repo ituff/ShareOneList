@@ -186,27 +186,6 @@
   <data name="HomePage_QuickStart_Title.Text" xml:space="preserve">
     <value>QuickStart</value>
   </data>
-  <data name="LinkDetails_Content.Text" xml:space="preserve">
-    <value>Content</value>
-  </data>
-  <data name="LinkDetails_Created.Text" xml:space="preserve">
-    <value>Created</value>
-  </data>
-  <data name="LinkDetails_Expired.Text" xml:space="preserve">
-    <value>Expire date</value>
-  </data>
-  <data name="LinkDetails_Password.Text" xml:space="preserve">
-    <value>Password</value>
-  </data>
-  <data name="LinkDetails_Title.Text" xml:space="preserve">
-    <value>Title</value>
-  </data>
-  <data name="LinkDetails_Updated.Text" xml:space="preserve">
-    <value>Updated</value>
-  </data>
-  <data name="LinkDetails_Views.Text" xml:space="preserve">
-    <value>Views</value>
-  </data>
   <data name="NavigationBar_Bookmark.Content" xml:space="preserve">
     <value>Bookmark</value>
   </data>
@@ -281,30 +260,6 @@
   </data>
   <data name="SettingPage_Title.Text" xml:space="preserve">
     <value>Settings</value>
-  </data>
-  <data name="ShareCommunityCreateLinkPage_Category.Header" xml:space="preserve">
-    <value>Category</value>
-  </data>
-  <data name="ShareCommunityCreateLinkPage_Content.Header" xml:space="preserve">
-    <value>Content</value>
-  </data>
-  <data name="ShareCommunityCreateLinkPage_ExpirationDate.Header" xml:space="preserve">
-    <value>Expiration date</value>
-  </data>
-  <data name="ShareCommunityCreateLinkPage_Password.Header" xml:space="preserve">
-    <value>Password(Optional)</value>
-  </data>
-  <data name="ShareCommunityCreateLinkPage_Title.Header" xml:space="preserve">
-    <value>Title</value>
-  </data>
-  <data name="ShareCommunityPage_Details.Content" xml:space="preserve">
-    <value>Details</value>
-  </data>
-  <data name="ShareCommunityPage_Flyout_CreateLink.Text" xml:space="preserve">
-    <value>Create</value>
-  </data>
-  <data name="ShareCommunityPage_Flyout_Refresh.Text" xml:space="preserve">
-    <value>Refresh</value>
   </data>
   <data name="TaskManagerPage_DownloadComplted.Text" xml:space="preserve">
     <value>Download completed</value>
