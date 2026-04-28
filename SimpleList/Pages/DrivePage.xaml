@@ -12,8 +12,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:wuc="using:WinUICommunity"
     mc:Ignorable="d"
-    d:DataContext="{x:Bind vm:DriveViewModel}"
-    NavigationCacheMode="Enabled">
+    d:DataContext="{x:Bind vm:DriveViewModel}">
 
     <Page.Resources>
         <converter:FileSizeConverter x:Key="FileSizeConverter" />

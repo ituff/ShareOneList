@@ -498,6 +498,18 @@
   <data name="DriveHubPage_SharedWithMe.Text" xml:space="preserve">
     <value>与我共享</value>
   </data>
+  <data name="DriveTabPage_Back" xml:space="preserve">
+    <value>后退</value>
+  </data>
+  <data name="DriveTabPage_Forward" xml:space="preserve">
+    <value>前进</value>
+  </data>
+  <data name="DriveTabPage_Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="DriveTabPage_FilesTab" xml:space="preserve">
+    <value>文件</value>
+  </data>
   <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
     <value>没有共享的文档库</value>
   </data>

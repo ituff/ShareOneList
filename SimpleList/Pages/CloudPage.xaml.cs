@@ -35,7 +35,7 @@ namespace SimpleList.Pages
             DirvePanel.IsItemClickEnabled = false;
             string displayName = (sender as Grid).Tag.ToString();
             DriveViewModel drive = (DataContext as CloudViewModel).GetDrive(displayName);
-            (App.StartupWindow as MainWindow).Navigate(typeof(DriveHubPage), drive);
+            (App.StartupWindow as MainWindow).NavigateToDriveTab(drive);
             DirvePanel.IsItemClickEnabled = true;
         }
     }
