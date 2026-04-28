@@ -70,8 +70,9 @@ namespace SimpleList.Services
             {
                 ".txt" => FileType.Text,
                 ".md" => FileType.Markdown,
-                string img when ImageType.Contains(img) => FileType.Image,// https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.image?view=windows-app-sdk-1.4#image-file-formats
+                string img when ImageType.Contains(img) => FileType.Image,
                 string media when MediaType.Contains(media) => FileType.Media,
+                string office when OfficeType.Contains(office) => FileType.Office,
                 _ => FileType.Unknown,
             };
         }
@@ -90,5 +91,6 @@ namespace SimpleList.Services
 
         public static readonly string[] ImageType = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".ico", ".svg" };
         public static readonly string[] MediaType = { "mp3", ".mp4", ".wma", ".3gp", ".aac", ".flac", ".wax", ".wav", ".wmx", ".wpl", ".avi" };
+        public static readonly string[] OfficeType = { ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".pdf", ".odt", ".ods", ".odp", ".csv" };
     }
 }

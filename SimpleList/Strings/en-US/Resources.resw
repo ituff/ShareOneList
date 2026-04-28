@@ -465,6 +465,18 @@
   <data name="DriveTabPage_FilesTab" xml:space="preserve">
     <value>Files</value>
   </data>
+  <data name="FileOpen_ConfirmDownload_Title" xml:space="preserve">
+    <value>Download and Open</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Content" xml:space="preserve">
+    <value>This file type cannot be previewed online. Do you want to download "{0}" to a local cache and open it with the default application?</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Confirm" xml:space="preserve">
+    <value>Download and Open</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
   <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
     <value>No Shared Libraries</value>
   </data>

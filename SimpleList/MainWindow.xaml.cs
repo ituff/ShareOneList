@@ -58,7 +58,6 @@ namespace SimpleList
             if (_driveTabPage != null)
             {
                 _driveTabPage.AddTab(drive);
-                // Make sure DriveTabPage is visible
                 if (contentFrame.Content != _driveTabPage)
                 {
                     contentFrame.Navigate(typeof(DriveTabPage));
@@ -66,8 +65,22 @@ namespace SimpleList
             }
             else
             {
-                // First time: navigate to DriveTabPage, OnNavigatedTo will create the drive tab
                 contentFrame.Navigate(typeof(DriveTabPage), drive);
+            }
+        }
+
+        /// <summary>
+        /// Open a file preview in a new tab inside DriveTabPage.
+        /// </summary>
+        public void OpenPreviewTab(ViewModels.FileViewModel file)
+        {
+            if (_driveTabPage != null)
+            {
+                _driveTabPage.AddPreviewTab(file);
+                if (contentFrame.Content != _driveTabPage)
+                {
+                    contentFrame.Navigate(typeof(DriveTabPage));
+                }
             }
         }
 
