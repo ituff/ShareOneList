@@ -1,44 +1,58 @@
 # SimpleList
 
-[English](./README.md) | ¼òÌåÖĞÎÄ
+[English](./README.md) | ç®€ä½“ä¸­æ–‡
 
 ![simplelist](https://socialify.git.ci/aiguoli/simplelist/image?description=1&font=Raleway&language=1&name=1&stargazers=1&theme=Light)
 
-OneDriveÁĞ±í³ÌĞò£¬Ê¹ÓÃWinUI3¿ª·¢
+SimpleList æ˜¯ä¸€ä¸ªä½¿ç”¨ WinUI3 å¼€å‘çš„ OneDrive æ–‡ä»¶åˆ—è¡¨åº”ç”¨ã€‚
 
-# Ê¹ÓÃ·½·¨
+# ä½¿ç”¨æ–¹æ³•
 
-½âÑ¹ºóË«»÷´ò¿ª
+è§£å‹ååŒå‡»è¿è¡Œ
 
-# ÅäÖÃ
+# é…ç½®
 
-ĞŞ¸Ä`SimpleList/appsettings.json`¿ÉÒÔ×Ô¶¨ÒåClientIDµÈÅäÖÃ¡£ 
+ä¿®æ”¹ `SimpleList/appsettings.json` æ¥è‡ªå®šä¹‰é…ç½®ã€‚
 
-# ¹¦ÄÜ
+ä½ å¯ä»¥åˆ†åˆ«ä¸ºå›½é™…ç‰ˆå’Œä¸–çºªäº’è”ç‰ˆè®¾ç½®ä¸åŒçš„ Azure AD å®¢æˆ·ç«¯ IDï¼š
 
-- [x] ÁĞ±í
-- [x] ÏÂÔØ
-- [x] ¹²Ïí
-- [x] Ô¤ÀÀ
-- [x] ÏÂÔØ½ø¶È
-- [x] ÉÏ´«
-- [ ] ×Ô¶¯Í¬²½
-- [x] ÖØÃüÃû
-- [x] É¾³ı
-- [x] ÊôĞÔ
-- [x] ×ÜÓÃÁ¿
-- [x] ×ª»»ÎªPDFÎÄ¼ş
-- [ ] ĞÂtab´ò¿ª
-- [ ] ×Ô¶¨ÒåÖ÷Ìâ
-- [x] ¶àÕË»§
-- [x] ¶àÓïÑÔ
-- [x] ¹¤¾ßÒ³ 
+```json
+{
+  "AzureAD": {
+    "Global": {
+      "ClientId": "ä½ çš„å›½é™…ç‰ˆå®¢æˆ·ç«¯ID"
+    },
+    "China": {
+      "ClientId": "ä½ çš„ä¸–çºªäº’è”ç‰ˆå®¢æˆ·ç«¯ID"
+    }
+  }
+}
+```
 
-# ¼¼ÊõÑ¡ĞÍ
+> **æ³¨æ„ï¼š** å›½é™…ç‰ˆå’Œä¸–çºªäº’è”ç‰ˆçš„ Azure AD æ˜¯å®Œå…¨ç‹¬ç«‹çš„ä½“ç³»ï¼Œä½ éœ€è¦åˆ†åˆ«åœ¨ [portal.azure.com](https://portal.azure.com)ï¼ˆå›½é™…ç‰ˆï¼‰å’Œ [portal.azure.cn](https://portal.azure.cn)ï¼ˆä¸–çºªäº’è”ç‰ˆï¼‰æ³¨å†Œåº”ç”¨ã€‚
 
-WinForms£¬WPFÌ«ÀÏÁË£¬Avalonia¿ÓÌ«¶àÁËÓÃ²»Ã÷°×£¬HTML+CSS+JSµÄ¿ò¼ÜÓÖÌ«´ó£¬IcedºÍSlintÉúÌ¬²»ÖªµÀÔõÑù£¬²»¸ÒÉÏÊÖ£¬ËìÑ¡ÓÃWinUI3£¬·¢ÏÖĞ´ÆğÀ´ºÜË¬£¬ÎÄµµÒ²±È½ÏÍêÕû¡£µÚÒ»´ÎĞ´×ÀÃæ¶ËºÍWinUI3£¬È¨µ±Á·ÊÖÏîÄ¿ÁË¡£
+# åŠŸèƒ½
 
-# ½ØÍ¼£¨¿ÉÄÜ²»ÊÇ×îĞÂ°æ±¾£©
+- [x] æ–‡ä»¶åˆ—è¡¨
+- [x] ä¸‹è½½
+- [x] åˆ†äº«
+- [x] é¢„è§ˆ
+- [x] ä¸‹è½½è¿›åº¦
+- [x] ä¸Šä¼ 
+- [ ] è‡ªåŠ¨åŒæ­¥
+- [x] é‡å‘½å
+- [x] åˆ é™¤
+- [x] å±æ€§
+- [x] æ€»å®¹é‡
+- [x] è½¬æ¢ä¸º PDF
+- [ ] æ–° tab æ‰“å¼€
+- [ ] è‡ªå®šä¹‰ä¸»é¢˜
+- [x] å¤šè´¦æˆ·
+- [x] å¤šè¯­è¨€
+- [x] å·¥å…·é¡µ
+- [x] æ”¯æŒä¸–çºªäº’è”ç‰ˆï¼ˆä¸­å›½ï¼‰å’Œå›½é™…ç‰ˆ
+
+# æˆªå›¾ï¼ˆå¯èƒ½ä¸æ˜¯æœ€æ–°ç‰ˆæœ¬ï¼‰
 
 ![HomePage](./ScreenShots/HomePage.png)
 ![CloudPage](./ScreenShots/CloudPage.png)
@@ -46,7 +60,7 @@ WinForms£¬WPFÌ«ÀÏÁË£¬Avalonia¿ÓÌ«¶àÁËÓÃ²»Ã÷°×£¬HTML+CSS+JSµÄ¿ò¼ÜÓÖÌ«´ó£¬IcedºÍSl
 ![CreateFolder](./ScreenShots/CreateFolder.png)
 ![GridLayout](./ScreenShots/GridLayout.png)
 ![Download](./ScreenShots/Download.png)
-![Sahre](./ScreenShots/Share.png)
+![Share](./ScreenShots/Share.png)
 ![ImageViewing](./ScreenShots/ImageViewing.png)
 ![ToolsPage](./ScreenShots/ToolsPage.png)
 ![ShareCommunityLinkDetails](./ScreenShots/ShareCommunityLinkDetails.png)

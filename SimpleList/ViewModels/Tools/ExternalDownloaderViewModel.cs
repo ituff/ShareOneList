@@ -28,7 +28,7 @@ public partial class ExternalDownloaderViewModel : ObservableObject
         };
         if (Uri.TryCreate(ShareUrl, UriKind.Absolute, out Uri shareUrl))
         {
-            if (shareUrl.Host.EndsWith("sharepoint.com"))
+            if (shareUrl.Host.EndsWith("sharepoint.com") || shareUrl.Host.EndsWith("sharepoint.cn"))
             {
                 var match = Regex.Match(ShareUrl, _sharepointPattern);
 
@@ -141,7 +141,7 @@ public partial class ExternalDownloaderViewModel : ObservableObject
         IDM
     }
 
-    private static readonly string _sharepointPattern = @"(https://[^/]+sharepoint\.com)/:([a-z]):/g/personal/([^/]+)/([^/?]+)";
+    private static readonly string _sharepointPattern = @"(https://[^/]+sharepoint\.(?:com|cn))/:([a-z]):/g/personal/([^/]+)/([^/?]+)";
     private readonly HttpClient client = new();
 
     // aria2 config

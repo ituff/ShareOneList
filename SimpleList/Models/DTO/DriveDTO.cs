@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using SimpleList.Models;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace SimpleList.Models.DTO
@@ -13,6 +14,7 @@ namespace SimpleList.Models.DTO
     {
         public string HomeAccountId { get; set; }
         public string DriveId { get; set; }
+        public CloudType CloudType { get; set; }
     }
 
     [JsonSourceGenerationOptions()]

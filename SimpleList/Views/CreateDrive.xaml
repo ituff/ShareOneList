@@ -8,13 +8,15 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
     d:DataContext="{x:Bind vm:CreateDriveViewModel}"
-    Title="Create drive"
+    x:Uid="CreateDrive_Dialog"
     DefaultButton="Primary"
-    PrimaryButtonText="Create"
-    PrimaryButtonCommand="{Binding CreateDriveCommand}"
-    CloseButtonText="Cancel">
+    PrimaryButtonCommand="{Binding CreateDriveCommand}">
 
-    <Grid>
-        <TextBox x:Name="DriveName" Header="Display name(Optional)" PlaceholderText="Drive Name" Text="{Binding DisplayName, Mode=TwoWay}" Margin="10,10,10,0" />
-    </Grid>
+    <StackPanel Spacing="12">
+        <TextBox x:Uid="CreateDrive_DisplayName" Text="{Binding DisplayName, Mode=TwoWay}" />
+        <RadioButtons x:Uid="CreateDrive_CloudType" MaxColumns="2">
+            <RadioButton x:Uid="CreateDrive_CloudType_China" IsChecked="{Binding IsChina, Mode=TwoWay}" />
+            <RadioButton x:Uid="CreateDrive_CloudType_Global" IsChecked="{Binding IsGlobal, Mode=TwoWay}" />
+        </RadioButtons>
+    </StackPanel>
 </ContentDialog>
