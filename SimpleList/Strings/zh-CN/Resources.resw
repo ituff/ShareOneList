@@ -1,0 +1,504 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="AuthenticationError" xml:space="preserve">
+    <value>身份验证错误</value>
+  </data>
+  <data name="CanNotNull" xml:space="preserve">
+    <value>不能为空</value>
+  </data>
+  <data name="CloudPage_CreateDrive.Content" xml:space="preserve">
+    <value>添加网盘</value>
+  </data>
+  <data name="CloudPage_CreateFolder.Text" xml:space="preserve">
+    <value>新建文件夹</value>
+  </data>
+  <data name="CloudPage_Flyout_GetCapacity.Text" xml:space="preserve">
+    <value>查看容量</value>
+  </data>
+  <data name="CloudPage_Flyout_RemoveDrive.Text" xml:space="preserve">
+    <value>移除网盘</value>
+  </data>
+  <data name="CloudPage_Layout.Text" xml:space="preserve">
+    <value>布局</value>
+  </data>
+  <data name="CloudPage_Layout_Column.Text" xml:space="preserve">
+    <value>详细</value>
+  </data>
+  <data name="CloudPage_Layout_Grid.Text" xml:space="preserve">
+    <value>缩略图</value>
+  </data>
+  <data name="CloudPage_Layout_Image.Text" xml:space="preserve">
+    <value>看图</value>
+  </data>
+  <data name="CloudPage_Refresh.Text" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="CloudPage_Title.Text" xml:space="preserve">
+    <value>你的网盘</value>
+  </data>
+  <data name="CreateFolderFail" xml:space="preserve">
+    <value>文件夹创建失败</value>
+  </data>
+  <data name="CreateFolderSuccess" xml:space="preserve">
+    <value>文件夹创建成功</value>
+  </data>
+  <data name="CreateFolderView_Label.Header" xml:space="preserve">
+    <value>输入新文件夹名</value>
+  </data>
+  <data name="CreateFolderView_Label.PlaceholderText" xml:space="preserve">
+    <value>新建文件夹</value>
+  </data>
+  <data name="DeleteFileFail" xml:space="preserve">
+    <value>文件删除失败</value>
+  </data>
+  <data name="DeleteFileSuccess" xml:space="preserve">
+    <value>文件删除成功</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>出错了</value>
+  </data>
+  <data name="ExternalDownloaderPage_Aria2Config.Text" xml:space="preserve">
+    <value>Aria2 配置</value>
+  </data>
+  <data name="ExternalDownloaderPage_CopyButton.Content" xml:space="preserve">
+    <value>📋 复制</value>
+  </data>
+  <data name="ExternalDownloaderPage_DownloadTool.Text" xml:space="preserve">
+    <value>下载工具</value>
+  </data>
+  <data name="ExternalDownloaderPage_IdmPath.Text" xml:space="preserve">
+    <value>IDM 路径</value>
+  </data>
+  <data name="ExternalDownloaderPage_MotrixConfig.Text" xml:space="preserve">
+    <value>Motrix 配置</value>
+  </data>
+  <data name="ExternalDownloaderPage_OneDriveShareLink.Text" xml:space="preserve">
+    <value>OneDrive 分享链接</value>
+  </data>
+  <data name="ExternalDownloaderPage_ParseLink.Content" xml:space="preserve">
+    <value>解析链接</value>
+  </data>
+  <data name="ExternalDownloaderPage_ParseResult.Text" xml:space="preserve">
+    <value>解析结果</value>
+  </data>
+  <data name="ExternalDownloaderPage_PushDownload.Content" xml:space="preserve">
+    <value>推送下载</value>
+  </data>
+  <data name="ExternalDownloaderPage_RPCAddress.Text" xml:space="preserve">
+    <value>RPC 地址</value>
+  </data>
+  <data name="ExternalDownloaderPage_RPCSecret.Text" xml:space="preserve">
+    <value>RPC 密匙</value>
+  </data>
+  <data name="ExternalDownloaderPage_SelectDownloader.PlaceholderText" xml:space="preserve">
+    <value>选择下载工具</value>
+  </data>
+  <data name="ExternalDownloaderPage_SelectDownloadTooltip.Text" xml:space="preserve">
+    <value>请选择下载器以查看配置选项</value>
+  </data>
+  <data name="FilenameIllegal" xml:space="preserve">
+    <value>文件名{0}不合法</value>
+  </data>
+  <data name="FileView_Flyout_Convert.Text" xml:space="preserve">
+    <value>转换</value>
+  </data>
+  <data name="FileView_Flyout_Copy.Text" xml:space="preserve">
+    <value>复制</value>
+  </data>
+  <data name="FileView_Flyout_CopyDownloadUrl.Text" xml:space="preserve">
+    <value>下载链接</value>
+  </data>
+  <data name="FileView_Flyout_CopyFilename.Text" xml:space="preserve">
+    <value>文件名</value>
+  </data>
+  <data name="FileView_Flyout_Delete.Text" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="FileView_Flyout_Download.Text" xml:space="preserve">
+    <value>下载</value>
+  </data>
+  <data name="FileView_Flyout_Open.Text" xml:space="preserve">
+    <value>打开</value>
+  </data>
+  <data name="FileView_Flyout_Property.Text" xml:space="preserve">
+    <value>属性</value>
+  </data>
+  <data name="FileView_Flyout_Rename.Text" xml:space="preserve">
+    <value>重命名</value>
+  </data>
+  <data name="FileView_Flyout_Share.Text" xml:space="preserve">
+    <value>分享</value>
+  </data>
+  <data name="HomePage_Capacity" xml:space="preserve">
+    <value>容量: </value>
+  </data>
+  <data name="HomePage_Greeting" xml:space="preserve">
+    <value>你好, </value>
+  </data>
+  <data name="HomePage_QuickStart_Content.Text" xml:space="preserve">
+    <value>点击左侧菜单栏的文件，然后点击添加网盘登录到OneDrive，双击进入添加好的网盘</value>
+  </data>
+  <data name="HomePage_QuickStart_Title.Text" xml:space="preserve">
+    <value>快速开始</value>
+  </data>
+  <data name="InsufficientPermission" xml:space="preserve">
+    <value>权限不足</value>
+  </data>
+  <data name="LoginFail" xml:space="preserve">
+    <value>登陆失败</value>
+  </data>
+  <data name="LoginRequired" xml:space="preserve">
+    <value>需要用户重新登录</value>
+  </data>
+  <data name="NavigationBar_Bookmark.Content" xml:space="preserve">
+    <value>书签</value>
+  </data>
+  <data name="NavigationBar_Files.Content" xml:space="preserve">
+    <value>文件</value>
+  </data>
+  <data name="NavigationBar_Home.Content" xml:space="preserve">
+    <value>首页</value>
+  </data>
+  <data name="NavigationBar_Tasks.Content" xml:space="preserve">
+    <value>任务</value>
+  </data>
+  <data name="NavigationBar_Tools.Content" xml:space="preserve">
+    <value>工具</value>
+  </data>
+  <data name="NetworkError" xml:space="preserve">
+    <value>网络错误</value>
+  </data>
+  <data name="OperationTimeout " xml:space="preserve">
+    <value>操作超时</value>
+  </data>
+  <data name="ParameterError" xml:space="preserve">
+    <value>参数错误</value>
+  </data>
+  <data name="PropertyViews_ChildrenCount.Text" xml:space="preserve">
+    <value>包含项目</value>
+  </data>
+  <data name="PropertyViews_Filename.Text" xml:space="preserve">
+    <value>文件名</value>
+  </data>
+  <data name="PropertyViews_Size.Text" xml:space="preserve">
+    <value>文件大小</value>
+  </data>
+  <data name="PropertyViews_Updated.Text" xml:space="preserve">
+    <value>更新日期</value>
+  </data>
+  <data name="RootFileName" xml:space="preserve">
+    <value>根目录</value>
+  </data>
+  <data name="SearchView.Title" xml:space="preserve">
+    <value>搜索文件</value>
+  </data>
+  <data name="SearchView_FileName.Header" xml:space="preserve">
+    <value>文件名</value>
+  </data>
+  <data name="SearchView_Mode.Text" xml:space="preserve">
+    <value>搜索模式</value>
+  </data>
+  <data name="SearchView_ModeDescGlobal.Text" xml:space="preserve">
+    <value>全局：在整个OneDrive搜索</value>
+  </data>
+  <data name="SearchView_ModeDescLocal.Text" xml:space="preserve">
+    <value>当前目录：在此目录搜索</value>
+  </data>
+  <data name="SearchView_Mode_Global.Content" xml:space="preserve">
+    <value>全局</value>
+  </data>
+  <data name="SearchView_Mode_Local.Content" xml:space="preserve">
+    <value>当前目录</value>
+  </data>
+  <data name="SettingPage_AboutTitle.Text" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="SettingPage_AppearanceTitle.Text" xml:space="preserve">
+    <value>显示</value>
+  </data>
+  <data name="SettingPage_AppMaterial.Header" xml:space="preserve">
+    <value>材质</value>
+  </data>
+  <data name="SettingPage_AppTheme.Header" xml:space="preserve">
+    <value>App主题</value>
+  </data>
+  <data name="SettingPage_About.Description" xml:space="preserve">
+    <value>OneDrive 与 SharePoint，国际版与世纪互联——一个应用，连接所有云</value>
+  </data>
+  <data name="SettingPage_Credits.Header" xml:space="preserve">
+    <value>基于 aiguoli 的 SimpleList 项目</value>
+  </data>
+  <data name="SettingPage_Credits.Description" xml:space="preserve">
+    <value>感谢原作者的开源贡献</value>
+  </data>
+  <data name="SettingPage_CheckUpdate.Content" xml:space="preserve">
+    <value>检查更新</value>
+  </data>
+  <data name="SettingPage_DownloadUpdate.Content" xml:space="preserve">
+    <value>下载</value>
+  </data>
+  <data name="SettingPage_NewVersionTip.Text" xml:space="preserve">
+    <value>已经是最新版本。</value>
+  </data>
+  <data name="SettingPage_Theme_Dark.Content" xml:space="preserve">
+    <value>深色</value>
+  </data>
+  <data name="SettingPage_Theme_Default.Content" xml:space="preserve">
+    <value>跟随系统</value>
+  </data>
+  <data name="SettingPage_Theme_Light.Content" xml:space="preserve">
+    <value>浅色</value>
+  </data>
+  <data name="SettingPage_TintColor.Header" xml:space="preserve">
+    <value>主题色</value>
+  </data>
+  <data name="SettingPage_Title.Text" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="Success" xml:space="preserve">
+    <value>操作成功</value>
+  </data>
+  <data name="TaskManagerPage_DownloadComplted.Text" xml:space="preserve">
+    <value>下载完成</value>
+  </data>
+  <data name="TaskManagerPage_OpenFolder.Text" xml:space="preserve">
+    <value>打开所在文件夹</value>
+  </data>
+  <data name="TaskManagerPage_Pivot_Download.Header" xml:space="preserve">
+    <value>下载</value>
+  </data>
+  <data name="TaskManagerPage_Pivot_Upload.Header" xml:space="preserve">
+    <value>上传</value>
+  </data>
+  <data name="TaskManagerPage_Remove.Text" xml:space="preserve">
+    <value>移除</value>
+  </data>
+  <data name="TaskManagerPage_Resume.Text" xml:space="preserve">
+    <value>恢复</value>
+  </data>
+  <data name="TaskManagerPage_ShutdownAfterDownload.Content" xml:space="preserve">
+    <value>下载完成后关机(仅本次有效)</value>
+  </data>
+  <data name="TaskManagerPage_StartDownload" xml:space="preserve">
+    <value>开始下载</value>
+  </data>
+  <data name="TaskManagerPage_StartDownloadDesc" xml:space="preserve">
+    <value>准备开始下载{0}个文件</value>
+  </data>
+  <data name="TaskManagerPage_StartUploadDesc" xml:space="preserve">
+    <value>准备上传文件：{0}</value>
+  </data>
+  <data name="TaskManagerPage_Upload" xml:space="preserve">
+    <value>开始上传</value>
+  </data>
+  <data name="TaskManagerPage_UploadComplted.Text" xml:space="preserve">
+    <value>上传完成</value>
+  </data>
+  <data name="UnknownError" xml:space="preserve">
+    <value>未知错误</value>
+  </data>
+  <data name="UploadFileFail" xml:space="preserve">
+    <value>文件上传失败</value>
+  </data>
+  <data name="UploadFolderFail" xml:space="preserve">
+    <value>文件夹上传失败</value>
+  </data>
+  <data name="CreateDrive_Dialog.Title" xml:space="preserve">
+    <value>创建网盘</value>
+  </data>
+  <data name="CreateDrive_Dialog.PrimaryButtonText" xml:space="preserve">
+    <value>创建</value>
+  </data>
+  <data name="CreateDrive_Dialog.CloseButtonText" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="CreateDrive_DisplayName.Header" xml:space="preserve">
+    <value>显示名称（可选）</value>
+  </data>
+  <data name="CreateDrive_DisplayName.PlaceholderText" xml:space="preserve">
+    <value>网盘名称</value>
+  </data>
+  <data name="CreateDrive_CloudType.Header" xml:space="preserve">
+    <value>云服务类型</value>
+  </data>
+  <data name="CreateDrive_CloudType_China.Content" xml:space="preserve">
+    <value>世纪互联版</value>
+  </data>
+  <data name="CreateDrive_CloudType_Global.Content" xml:space="preserve">
+    <value>国际版</value>
+  </data>
+  <data name="DriveHubPage_Back.Text" xml:space="preserve">
+    <value>返回</value>
+  </data>
+  <data name="DriveHubPage_NoOneDrive" xml:space="preserve">
+    <value>没有 OneDrive</value>
+  </data>
+  <data name="DriveHubPage_NoOneDriveDesc" xml:space="preserve">
+    <value>此账户没有 OneDrive 许可证。</value>
+  </data>
+  <data name="DriveHubPage_NoSharePoint" xml:space="preserve">
+    <value>没有 SharePoint 站点</value>
+  </data>
+  <data name="DriveHubPage_NoSharePointDesc" xml:space="preserve">
+    <value>未找到 SharePoint 站点。世纪互联账户需要先在 SharePoint 中关注站点。</value>
+  </data>
+  <data name="DriveHubPage_SharedWithMe.Text" xml:space="preserve">
+    <value>与我共享</value>
+  </data>
+  <data name="DriveTabPage_Back" xml:space="preserve">
+    <value>后退</value>
+  </data>
+  <data name="DriveTabPage_Forward" xml:space="preserve">
+    <value>前进</value>
+  </data>
+  <data name="DriveTabPage_Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="DriveTabPage_FilesTab" xml:space="preserve">
+    <value>文件</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Title" xml:space="preserve">
+    <value>下载并打开</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Content" xml:space="preserve">
+    <value>此文件类型无法在线预览。是否将"{0}"下载到本地缓存并使用默认应用程序打开？</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Confirm" xml:space="preserve">
+    <value>下载并打开</value>
+  </data>
+  <data name="FileOpen_ConfirmDownload_Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrives" xml:space="preserve">
+    <value>没有共享的文档库</value>
+  </data>
+  <data name="DriveHubPage_NoSharedDrivesDesc" xml:space="preserve">
+    <value>未找到与此账户共享的文档库。</value>
+  </data>
+  <data name="DrivePage_SelectMode.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>选择模式</value>
+  </data>
+  <data name="DrivePage_BatchDownload.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>下载选中项</value>
+  </data>
+  <data name="DrivePage_BatchDownloadText.Text" xml:space="preserve">
+    <value>下载</value>
+  </data>
+</root>

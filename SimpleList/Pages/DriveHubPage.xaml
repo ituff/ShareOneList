@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="SimpleList.Pages.DriveHubPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:wuc="using:WinUICommunity"
+    mc:Ignorable="d">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="PageTitle" FontSize="24" FontWeight="SemiBold" Margin="0 0 0 16" />
+
+        <ProgressBar Grid.Row="1" x:Name="LoadingBar" IsIndeterminate="True" Visibility="Collapsed" Margin="0 0 0 10" />
+
+        <!-- Service selection: OneDrive, SharePoint, and Shared -->
+        <StackPanel x:Name="ServicePanel" Grid.Row="2" Orientation="Vertical" Spacing="8">
+            <Grid DoubleTapped="OneDrive_DoubleTapped" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE753;" FontSize="24" Margin="0 0 12 0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="OneDrive" FontSize="16" VerticalAlignment="Center" />
+            </Grid>
+            <Grid DoubleTapped="SharePoint_DoubleTapped" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE909;" FontSize="24" Margin="0 0 12 0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="SharePoint" FontSize="16" VerticalAlignment="Center" />
+            </Grid>
+            <Grid DoubleTapped="SharedWithMe_DoubleTapped" Padding="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE902;" FontSize="24" Margin="0 0 12 0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" x:Uid="DriveHubPage_SharedWithMe" FontSize="16" VerticalAlignment="Center" />
+            </Grid>
+        </StackPanel>
+
+        <!-- SharePoint sites list (hidden by default) -->
+        <StackPanel x:Name="SharePointPanel" Grid.Row="2" Visibility="Collapsed">
+            <Button x:Name="BackButton" Click="BackToHub" Margin="0 0 0 10">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE72B;" FontSize="14" />
+                    <TextBlock x:Uid="DriveHubPage_Back" />
+                </StackPanel>
+            </Button>
+            <ListView x:Name="SitesList" DoubleTapped="Site_DoubleTapped">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="8 6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE909;" FontSize="18" Margin="0 0 10 0" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding WebUrl}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
+
+        <!-- SharePoint site drives list (hidden by default) -->
+        <StackPanel x:Name="DrivesPanel" Grid.Row="2" Visibility="Collapsed">
+            <Button x:Name="BackToSitesButton" Click="BackToSites" Margin="0 0 0 10">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE72B;" FontSize="14" />
+                    <TextBlock x:Uid="DriveHubPage_Back" />
+                </StackPanel>
+            </Button>
+            <ListView x:Name="DrivesList" DoubleTapped="Drive_DoubleTapped">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="8 6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE8B7;" FontSize="18" Margin="0 0 10 0" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" VerticalAlignment="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" MinHeight="250" Margin="0"
+            wuc:Growl.GrowlParent="True" wuc:Growl.Token="HubGrowl" />
+    </Grid>
+</Page>

@@ -1,0 +1,252 @@
+{
+  "nav": {
+    "home": "Home",
+    "files": "Files",
+    "taskManager": "Task Manager",
+    "tools": "Tools",
+    "settings": "Settings"
+  },
+  "home": {
+    "title": "Home",
+    "welcome": "Welcome to ShareOneList — cross-platform OneDrive & SharePoint file manager.",
+    "greeting": "Hello, {{name}}",
+    "quickStart": "Quick Start",
+    "quickStartContent": "Click on Files in the left navigation menu, then click \"Add drive\" to log in to OneDrive. Double click to enter your drive.",
+    "capacity": "Capacity:"
+  },
+  "files": {
+    "title": "Files",
+    "description": "Browse your OneDrive and SharePoint files.",
+    "addDrive": "Add drive",
+    "removeDrive": "Remove Drive",
+    "checkStorage": "Check Storage",
+    "newFolder": "New Folder",
+    "refresh": "Refresh",
+    "layout": "Layout",
+    "layoutList": "List",
+    "layoutGrid": "Grid",
+    "layoutGallery": "Gallery",
+    "rootFolder": "Home",
+    "emptyFolder": "This folder is empty",
+    "loadMore": "Load more",
+    "selectionMode": "Selection Mode",
+    "downloadSelected": "Download Selected",
+    "dropToUpload": "Drop files here to upload",
+    "back": "Back",
+    "forward": "Forward"
+  },
+  "fileBrowser": {
+    "name": "Name",
+    "size": "Size",
+    "modified": "Modified",
+    "type": "Type"
+  },
+  "fileOps": {
+    "open": "Open",
+    "download": "Download",
+    "rename": "Rename",
+    "delete": "Delete",
+    "share": "Share",
+    "convert": "Convert",
+    "properties": "Properties",
+    "copy": "Copy",
+    "copyFilename": "Filename",
+    "copyDownloadUrl": "Download URL"
+  },
+  "tasks": {
+    "title": "Task Manager",
+    "description": "View and manage download and upload tasks.",
+    "downloads": "Downloads",
+    "uploads": "Uploads",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "remove": "Remove",
+    "clearCompleted": "Clear completed",
+    "openFolder": "Open Folder",
+    "downloadCompleted": "Download completed",
+    "uploadCompleted": "Upload completed",
+    "downloadStarted": "Download Started",
+    "downloadStartedDesc": "{{count}} files are ready to start downloading",
+    "uploadStarted": "Upload Started",
+    "uploadStartedDesc": "Start uploading file: {{name}}",
+    "shutdownAfterDownload": "Shutdown after download (once)",
+    "noTasks": "No tasks"
+  },
+  "tools": {
+    "title": "Tools",
+    "description": "External downloader integration and utilities.",
+    "shareLink": "OneDrive Share Link",
+    "parseLink": "Parse Link",
+    "parseResult": "Parse Result",
+    "copyLink": "Copy",
+    "downloadTool": "Download Tool",
+    "selectDownloader": "Select Downloader",
+    "selectDownloaderTooltip": "Select a downloader to view configuration options",
+    "pushDownload": "Start Download",
+    "aria2Config": "Aria2 Config",
+    "motrixConfig": "Motrix Config",
+    "idmPath": "IDM Path",
+    "rpcAddress": "RPC Address",
+    "rpcSecret": "RPC Secret"
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Configure theme, language, and preferences.",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "Use system setting",
+    "language": "Language",
+    "languageEn": "English",
+    "languageZh": "简体中文",
+    "about": "About",
+    "aboutDescription": "OneDrive & SharePoint, Global & China — one app for all your clouds",
+    "credits": "Based on SimpleList by aiguoli",
+    "creditsDescription": "Thanks to the original author for the open-source contribution",
+    "checkUpdate": "Check for Update",
+    "downloadUpdate": "Download",
+    "upToDate": "You are using the latest version."
+  },
+  "accounts": {
+    "addAccount": "Add Account",
+    "removeAccount": "Remove Account",
+    "cloudGlobal": "Global (International)",
+    "cloudChina": "China (21Vianet)",
+    "cloudType": "Cloud Type",
+    "displayName": "Display Name (Optional)",
+    "displayNamePlaceholder": "Drive Name",
+    "alreadyConnected": "This account is already connected."
+  },
+  "driveHub": {
+    "oneDrive": "OneDrive",
+    "sharePoint": "SharePoint",
+    "sharedWithMe": "Shared with me",
+    "noOneDrive": "No OneDrive",
+    "noOneDriveDesc": "This account does not have a OneDrive license.",
+    "noSharePoint": "No SharePoint Sites",
+    "noSharePointDesc": "No SharePoint sites found. For 21Vianet accounts, please follow sites in SharePoint first.",
+    "noSharedDrives": "No Shared Libraries",
+    "noSharedDrivesDesc": "No shared document libraries found for this account."
+  },
+  "dialogs": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "create": "Create",
+    "save": "Save",
+    "close": "Close",
+    "rename": {
+      "title": "Rename",
+      "placeholder": "Enter new name"
+    },
+    "delete": {
+      "title": "Delete",
+      "message": "Are you sure you want to delete \"{{name}}\"? It will be moved to the recycle bin."
+    },
+    "createFolder": {
+      "title": "New Folder",
+      "placeholder": "New Folder",
+      "label": "Type name of new folder"
+    },
+    "share": {
+      "title": "Share",
+      "linkType": "Link type",
+      "view": "View",
+      "edit": "Edit",
+      "expiration": "Expiration date",
+      "password": "Password (optional)",
+      "copyLink": "Copy Link",
+      "linkCopied": "Link copied to clipboard"
+    },
+    "fileOpen": {
+      "title": "Download and Open",
+      "message": "This file type cannot be previewed online. Do you want to download \"{{name}}\" to a local cache and open it with the default application?",
+      "confirm": "Download and Open"
+    },
+    "convert": {
+      "title": "Convert to PDF",
+      "message": "Convert \"{{name}}\" to PDF format.",
+      "saveAs": "Save as",
+      "convertBtn": "Convert",
+      "success": "File converted successfully"
+    },
+    "properties": {
+      "title": "Properties"
+    }
+  },
+  "properties": {
+    "filename": "Filename",
+    "size": "Size",
+    "modified": "Modified",
+    "created": "Created",
+    "childrenCount": "Items",
+    "webUrl": "Web URL"
+  },
+  "search": {
+    "title": "Search",
+    "placeholder": "Search files...",
+    "mode": "Search Mode",
+    "modeLocal": "Local",
+    "modeGlobal": "Global",
+    "modeLocalDesc": "Local: search in current directory",
+    "modeGlobalDesc": "Global: search across drive",
+    "noResults": "No results found",
+    "searching": "Searching..."
+  },
+  "tabs": {
+    "label": "Open drive tabs",
+    "close": "Close tab",
+    "maxReached": "Maximum number of tabs reached"
+  },
+  "errors": {
+    "error": "Error",
+    "networkError": "Network error",
+    "authError": "Authentication error",
+    "loginFailed": "Login failed",
+    "loginRequired": "User login required",
+    "timeout": "Operation timed out",
+    "insufficientPermission": "Insufficient permission",
+    "parameterError": "Parameter error",
+    "unknownError": "Unknown error",
+    "cannotBeEmpty": "cannot be empty",
+    "illegalFilename": "Illegal filename: {{name}}",
+    "createFolderFailed": "Folder creation failed",
+    "deleteFailed": "File deletion failed",
+    "uploadFileFailed": "File upload failed",
+    "uploadFolderFailed": "Folder upload failed",
+    "loadFailed": "Failed to load data. Please try again.",
+    "retryAction": "Retry"
+  },
+  "success": {
+    "success": "Success",
+    "folderCreated": "Folder created successfully",
+    "fileDeleted": "File deleted successfully",
+    "renamed": "Renamed successfully",
+    "linkCopied": "Link copied to clipboard",
+    "shareLinkCreated": "Share link created"
+  },
+  "storage": {
+    "total": "Total",
+    "used": "Used",
+    "remaining": "Remaining",
+    "unavailable": "Storage information unavailable"
+  },
+  "preview": {
+    "title": "File Preview",
+    "loading": "Loading preview...",
+    "loadFailed": "Failed to load preview",
+    "retry": "Retry",
+    "downloadInstead": "Download instead",
+    "previous": "Previous file",
+    "next": "Next file"
+  },
+  "update": {
+    "available": "Update Available",
+    "changelog": "Changelog",
+    "downloadAndInstall": "Download & Install",
+    "downloading": "Downloading update...",
+    "failed": "Update check failed",
+    "upToDate": "You are using the latest version."
+  }
+}
