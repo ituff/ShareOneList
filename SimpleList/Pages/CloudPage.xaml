@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="SimpleList.Pages.CloudPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:SimpleList.ViewModels"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" d:DataContext="{d:DesignInstance Type=vm:CloudViewModel}"
+    mc:Ignorable="d"
+    NavigationCacheMode="Enabled">
+
+    <Page.Resources>
+        <DataTemplate x:Key="DriveItemTemplate" x:DataType="vm:DriveViewModel">
+            <Grid Tag="{Binding DisplayName}" DoubleTapped="NavigateToDrive">
+                <Grid.ContextFlyout>
+                    <MenuFlyout>
+                        <MenuFlyoutItem x:Uid="CloudPage_Flyout_GetCapacity" Command="{Binding GetCapacityCommand}" />
+                        <!--<MenuFlyoutItem x:Uid="CloudPage_Flyout_RemoveDrive" Command="{Binding Cloud.RemoveDriveCommand}" CommandParameter="{Binding}" />-->
+                    </MenuFlyout>
+                </Grid.ContextFlyout>
+
+                <TextBlock Text="{Binding DisplayName}" />
+                <TextBlock Text="{Binding StorageInfo}" HorizontalAlignment="Right" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <TextBlock x:Uid="CloudPage_Title" />
+        <Button 
+            Grid.Row="1"
+            x:Uid="CloudPage_CreateDrive"
+            Margin="0 10 0 10"
+            Click="ShowCreateDriveDialogAsync" />
+        <ListView 
+            Grid.Row="2"
+            Name="DirvePanel"
+            ItemTemplate="{StaticResource DriveItemTemplate}"
+            ItemsSource="{Binding Drives}" />
+    </Grid>
+</Page>
