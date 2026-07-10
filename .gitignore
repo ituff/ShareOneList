@@ -366,3 +366,5 @@ SimepleList/SimpleList - Backup.csproj
 cache
 error.log
 ShareOneList-v1.7-x64.zip
+build.ps1
+run.ps1

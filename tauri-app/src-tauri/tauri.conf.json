@@ -1,0 +1,60 @@
+{
+  "productName": "ShareOneList",
+  "version": "2.0.0",
+  "identifier": "com.shareonelist.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ShareOneList",
+        "width": 1024,
+        "height": 768,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "ShareOneList Contributors",
+    "copyright": "Copyright © 2024 ShareOneList Contributors",
+    "category": "Utility",
+    "shortDescription": "Cross-platform OneDrive & SharePoint file manager",
+    "longDescription": "ShareOneList provides unified file management for Microsoft 365 OneDrive and SharePoint, supporting both Global (International) and 21Vianet (China) cloud environments.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": ["English", "SimpChinese"],
+        "installerIcon": "icons/icon.ico",
+        "headerImage": null
+      }
+    },
+    "macOS": {
+      "signingIdentity": null,
+      "entitlements": null,
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}
