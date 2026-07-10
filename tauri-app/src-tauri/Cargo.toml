@@ -1,0 +1,38 @@
+[package]
+name = "share-one-list"
+version = "2.0.0"
+description = "Cross-platform OneDrive & SharePoint file manager"
+authors = ["ShareOneList Contributors"]
+edition = "2021"
+
+[lib]
+name = "share_one_list_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "1"
+base64 = "0.22"
+sha2 = "0.10"
+rand = "0.8"
+open = "5"
+url = "2"
+tokio-util = "0.7"
+futures = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
