@@ -16,8 +16,8 @@ use crate::errors::AppError;
 
 // Default client IDs – these should be overridden from a config file in production.
 // For now they are compile-time constants matching the existing appsettings.json structure.
-const GLOBAL_CLIENT_ID: &str = "4a9a4502-3be3-4447-8028-f48af4e4465b";
-const CHINA_CLIENT_ID: &str = "068f4875-0a29-4012-a30c-427a5de22037";
+const GLOBAL_CLIENT_ID: &str = "9e5165d3-7c32-4cf6-bb54-b444bc429ba8";
+const CHINA_CLIENT_ID: &str = "edbc6b7c-e49c-42bd-8761-c0bc2386856f";
 
 const KEYRING_SERVICE: &str = "shareonelist";
 
