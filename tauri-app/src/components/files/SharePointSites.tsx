@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Building2, RefreshCw, AlertCircle } from "lucide-react";
 import { getSharepointSites } from "../../lib/tauri";
+import { getErrorMessage } from "../../lib/errors";
 import type { CloudEnvironment, Site } from "../../lib/types";
 
 interface SharePointSitesProps {
   cloudEnv: CloudEnvironment;
+  homeAccountId: string;
   onSiteSelect: (site: Site) => void;
   onBack: () => void;
 }
@@ -14,7 +16,7 @@ interface SharePointSitesProps {
  * Lists available SharePoint sites for the current account.
  * Handles loading, empty, and error states with retry support.
  */
-export function SharePointSites({ cloudEnv, onSiteSelect, onBack }: SharePointSitesProps) {
+export function SharePointSites({ cloudEnv, homeAccountId, onSiteSelect, onBack }: SharePointSitesProps) {
   const { t } = useTranslation();
   const [sites, setSites] = useState<Site[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,11 +26,10 @@ export function SharePointSites({ cloudEnv, onSiteSelect, onBack }: SharePointSi
     setIsLoading(true);
     setError(null);
     try {
-      const result = await getSharepointSites(cloudEnv);
+      const result = await getSharepointSites(cloudEnv, homeAccountId);
       setSites(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+      setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -36,7 +37,7 @@ export function SharePointSites({ cloudEnv, onSiteSelect, onBack }: SharePointSi
 
   useEffect(() => {
     fetchSites();
-  }, [cloudEnv]);
+  }, [cloudEnv, homeAccountId]);
 
   return (
     <div className="space-y-4">

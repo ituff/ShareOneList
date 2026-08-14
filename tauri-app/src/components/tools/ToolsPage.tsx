@@ -2,13 +2,20 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useToastStore } from "../../stores/toastStore";
+import { getErrorMessage } from "../../lib/errors";
 
-type DownloaderType = "Aria2" | "Motrix" | "Idm";
+type DownloaderType = "aria2" | "motrix" | "idm";
 
 const DEFAULT_ENDPOINTS: Record<DownloaderType, string> = {
-  Aria2: "http://localhost:6800/jsonrpc",
-  Motrix: "http://localhost:16800/jsonrpc",
-  Idm: "",
+  aria2: "http://localhost:6800/jsonrpc",
+  motrix: "http://localhost:16800/jsonrpc",
+  idm: "",
+};
+
+const DOWNLOADER_LABELS: Record<DownloaderType, string> = {
+  aria2: "Aria2",
+  motrix: "Motrix",
+  idm: "IDM",
 };
 
 export function ToolsPage() {
@@ -21,8 +28,8 @@ export function ToolsPage() {
   const [parseError, setParseError] = useState<string | null>(null);
 
   // Downloader configuration state
-  const [downloaderType, setDownloaderType] = useState<DownloaderType>("Aria2");
-  const [rpcUrl, setRpcUrl] = useState(DEFAULT_ENDPOINTS.Aria2);
+  const [downloaderType, setDownloaderType] = useState<DownloaderType>("aria2");
+  const [rpcUrl, setRpcUrl] = useState(DEFAULT_ENDPOINTS.aria2);
   const [rpcSecret, setRpcSecret] = useState("");
   const [fileName, setFileName] = useState("");
   const [pushing, setPushing] = useState(false);
@@ -60,8 +67,7 @@ export function ToolsPage() {
         setParseError(t("errors.parameterError"));
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setParseError(message);
+      setParseError(getErrorMessage(err));
     }
   };
 
@@ -84,20 +90,16 @@ export function ToolsPage() {
     try {
       await invoke("push_to_downloader", {
         config: {
-          downloader_type: downloaderType,
-          rpc_url: rpcUrl,
+          downloaderType,
+          rpcUrl,
           secret: rpcSecret || null,
-          download_url: parsedUrl,
-          file_name: fileName || "download",
+          downloadUrl: parsedUrl,
+          fileName: fileName || "download",
         },
       });
       addToast("success", t("success.success"));
     } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : String(err);
-      addToast("error", message);
+      addToast("error", getErrorMessage(err));
     } finally {
       setPushing(false);
     }
@@ -170,7 +172,7 @@ export function ToolsPage() {
             {t("tools.selectDownloader")}
           </label>
           <div className="flex gap-2">
-            {(["Aria2", "Motrix", "Idm"] as DownloaderType[]).map((type) => (
+            {(["aria2", "motrix", "idm"] as DownloaderType[]).map((type) => (
               <button
                 key={type}
                 onClick={() => handleDownloaderChange(type)}
@@ -180,7 +182,7 @@ export function ToolsPage() {
                     : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
-                {type === "Idm" ? "IDM" : type}
+                {DOWNLOADER_LABELS[type]}
               </button>
             ))}
           </div>
@@ -190,14 +192,14 @@ export function ToolsPage() {
         <div className="space-y-3">
           <div className="space-y-1">
             <label className="text-sm font-medium text-foreground">
-              {downloaderType === "Idm" ? t("tools.idmPath") : t("tools.rpcAddress")}
+              {downloaderType === "idm" ? t("tools.idmPath") : t("tools.rpcAddress")}
             </label>
             <input
               type="text"
               value={rpcUrl}
               onChange={(e) => setRpcUrl(e.target.value)}
               placeholder={
-                downloaderType === "Idm"
+                downloaderType === "idm"
                   ? "C:\\Program Files\\Internet Download Manager\\IDMan.exe"
                   : DEFAULT_ENDPOINTS[downloaderType]
               }
@@ -206,7 +208,7 @@ export function ToolsPage() {
           </div>
 
           {/* RPC Secret (only for Aria2/Motrix) */}
-          {downloaderType !== "Idm" && (
+          {downloaderType !== "idm" && (
             <div className="space-y-1">
               <label className="text-sm font-medium text-foreground">
                 {t("tools.rpcSecret")}

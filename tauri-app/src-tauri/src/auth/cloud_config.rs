@@ -1,10 +1,40 @@
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Represents the two supported Microsoft 365 cloud environments.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CloudEnvironment {
     Global,
     China,
+}
+
+impl Serialize for CloudEnvironment {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value = match self {
+            CloudEnvironment::Global => "global",
+            CloudEnvironment::China => "china",
+        };
+        serializer.serialize_str(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for CloudEnvironment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        match value.to_lowercase().as_str() {
+            "global" => Ok(CloudEnvironment::Global),
+            "china" => Ok(CloudEnvironment::China),
+            _ => Err(de::Error::custom(format!(
+                "Invalid cloud environment '{}'. Expected 'global' or 'china'.",
+                value
+            ))),
+        }
+    }
 }
 
 /// Configuration for a specific cloud environment.

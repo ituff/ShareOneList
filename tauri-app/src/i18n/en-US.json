@@ -2,6 +2,7 @@
   "nav": {
     "home": "Home",
     "files": "Files",
+    "bookmarks": "Bookmarks",
     "taskManager": "Task Manager",
     "tools": "Tools",
     "settings": "Settings"
@@ -51,7 +52,13 @@
     "properties": "Properties",
     "copy": "Copy",
     "copyFilename": "Filename",
-    "copyDownloadUrl": "Download URL"
+    "copyDownloadUrl": "Download URL",
+    "bookmark": "Bookmark"
+  },
+  "bookmarks": {
+    "description": "Quick access to your saved files and folders.",
+    "empty": "No bookmarks yet. Right-click a file or folder and choose Bookmark.",
+    "remove": "Remove bookmark"
   },
   "tasks": {
     "title": "Task Manager",
@@ -59,7 +66,9 @@
     "downloads": "Downloads",
     "uploads": "Uploads",
     "pause": "Pause",
+    "pauseAll": "Pause all",
     "resume": "Resume",
+    "resumeAll": "Resume all",
     "cancel": "Cancel",
     "remove": "Remove",
     "clearCompleted": "Clear completed",
@@ -68,6 +77,7 @@
     "uploadCompleted": "Upload completed",
     "downloadStarted": "Download Started",
     "downloadStartedDesc": "{{count}} files are ready to start downloading",
+    "batchDownload": "Batch download ({{count}} files)",
     "uploadStarted": "Upload Started",
     "uploadStartedDesc": "Start uploading file: {{name}}",
     "shutdownAfterDownload": "Shutdown after download (once)",
@@ -99,10 +109,12 @@
     "themeDark": "Dark",
     "themeSystem": "Use system setting",
     "language": "Language",
+    "languageSystem": "Use system language",
     "languageEn": "English",
     "languageZh": "简体中文",
     "about": "About",
     "aboutDescription": "OneDrive & SharePoint, Global & China — one app for all your clouds",
+    "version": "Version",
     "credits": "Based on SimpleList by aiguoli",
     "creditsDescription": "Thanks to the original author for the open-source contribution",
     "checkUpdate": "Check for Update",
@@ -117,6 +129,9 @@
     "cloudType": "Cloud Type",
     "displayName": "Display Name (Optional)",
     "displayNamePlaceholder": "Drive Name",
+    "reLoginTitle": "Sign in again",
+    "reLoginMessage": "Your credentials have expired. Please sign in again to continue.",
+    "reLoginAction": "Sign in",
     "alreadyConnected": "This account is already connected."
   },
   "driveHub": {
@@ -196,6 +211,7 @@
   },
   "tabs": {
     "label": "Open drive tabs",
+    "newTab": "New tab",
     "close": "Close tab",
     "maxReached": "Maximum number of tabs reached"
   },
@@ -220,6 +236,8 @@
   },
   "success": {
     "success": "Success",
+    "copied": "Copied",
+    "bookmarked": "Bookmarked",
     "folderCreated": "Folder created successfully",
     "fileDeleted": "File deleted successfully",
     "renamed": "Renamed successfully",
@@ -238,6 +256,7 @@
     "loadFailed": "Failed to load preview",
     "retry": "Retry",
     "downloadInstead": "Download instead",
+    "openInBrowser": "Open in browser",
     "previous": "Previous file",
     "next": "Next file"
   },

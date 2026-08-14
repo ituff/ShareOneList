@@ -56,7 +56,9 @@ fn parse_short_share_url(host: &str, path: &str) -> Option<String> {
     let type_indicator = segments[0];
 
     // Must be a file type indicator pattern like :w:, :x:, :p:, :b:, :f:
-    if !type_indicator.starts_with(':') || !type_indicator.ends_with(':') || type_indicator.len() != 3
+    if !type_indicator.starts_with(':')
+        || !type_indicator.ends_with(':')
+        || type_indicator.len() != 3
     {
         return None;
     }
@@ -99,7 +101,9 @@ fn parse_personal_layout_url(host: &str, path: &str, parsed: &Url) -> Option<Str
 
     // Extract user from path: /personal/{user}/...
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    let personal_idx = segments.iter().position(|s| s.eq_ignore_ascii_case("personal"))?;
+    let personal_idx = segments
+        .iter()
+        .position(|s| s.eq_ignore_ascii_case("personal"))?;
 
     if personal_idx + 1 >= segments.len() {
         return None;

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, ExternalLink, FileText, Folder } from "lucide-react";
-import type { CloudEnvironment, DriveItem, ItemProperties } from "../../../lib/types";
-import { getItemProperties } from "../../../lib/tauri";
+import type { CloudEnvironment, DriveItem } from "../../../lib/types";
+import { getItemProperties, getItemSize } from "../../../lib/tauri";
 import { formatFileSize, formatDate } from "../../../lib/formatters";
 
 interface PropertiesDialogProps {
@@ -16,11 +16,12 @@ interface PropertiesDialogProps {
  * Modal dialog displaying file/folder metadata properties.
  * Fetches fresh data from the backend on open.
  */
-export function PropertiesDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }: PropertiesDialogProps) {
+export function PropertiesDialog({ item, driveId, cloudEnv, onClose }: PropertiesDialogProps) {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [properties, setProperties] = useState<ItemProperties | null>(null);
+  const [properties, setProperties] = useState<DriveItem | null>(null);
+  const [computedSize, setComputedSize] = useState<number | null>(null);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -37,9 +38,17 @@ export function PropertiesDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }
       setIsLoading(true);
       setError(null);
       try {
-        const props = await getItemProperties(driveId, item.id);
+        const props = await getItemProperties(driveId, item.id, cloudEnv);
         if (!cancelled) {
           setProperties(props);
+        }
+        if (props.size == null) {
+          try {
+            const size = await getItemSize(driveId, item.id, cloudEnv);
+            if (!cancelled) setComputedSize(size);
+          } catch {
+            // Keep the size row hidden when Graph cannot compute it.
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -92,10 +101,10 @@ export function PropertiesDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }
             <PropertyRow label={t("properties.filename")} value={properties.name} />
 
             {/* Size */}
-            {properties.size != null && (
+            {(properties.size != null || computedSize != null) && (
               <PropertyRow
                 label={t("properties.size")}
-                value={formatFileSize(properties.size)}
+                value={formatFileSize(properties.size ?? computedSize ?? 0)}
               />
             )}
 
@@ -108,10 +117,10 @@ export function PropertiesDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }
             )}
 
             {/* Modified */}
-            {properties.lastModifiedDateTime && (
+            {properties.lastModified && (
               <PropertyRow
                 label={t("properties.modified")}
-                value={formatDate(properties.lastModifiedDateTime)}
+                value={formatDate(properties.lastModified)}
               />
             )}
 

@@ -9,12 +9,14 @@ import type {
   AccountEntry,
   AccountInfo,
   AppConfig,
+  BatchInfo,
+  BatchSnapshot,
   CloudEnvironment,
   Drive,
   DriveItem,
   DriveQuota,
+  DownloadFileSpec,
   ExternalDownloaderConfig,
-  ItemProperties,
   SearchScope,
   ShareOptions,
   Site,
@@ -35,8 +37,11 @@ export function login(cloudEnv: CloudEnvironment): Promise<AccountInfo> {
  * Log out from the specified cloud environment.
  * Clears tokens from secure storage.
  */
-export function logout(cloudEnv: CloudEnvironment): Promise<void> {
-  return invoke<void>("logout", { cloudEnv });
+export function logout(
+  cloudEnv: CloudEnvironment,
+  homeAccountId?: string
+): Promise<void> {
+  return invoke<void>("logout", { cloudEnv, homeAccountId });
 }
 
 // ─── File Operations ────────────────────────────────────────────────────────
@@ -61,9 +66,10 @@ export function searchFiles(
   driveId: string,
   query: string,
   scope: SearchScope,
+  cloudEnv: CloudEnvironment,
   itemId?: string
 ): Promise<DriveItem[]> {
-  return invoke<DriveItem[]>("search_files", { driveId, query, scope, itemId });
+  return invoke<DriveItem[]>("search_files", { driveId, query, scope, cloudEnv, itemId });
 }
 
 /**
@@ -121,12 +127,13 @@ export function createShareLink(
  * The converted file is saved to the given local path.
  */
 export function convertFormat(
+  cloudEnv: CloudEnvironment,
   driveId: string,
   itemId: string,
   format: string,
   savePath: string
 ): Promise<void> {
-  return invoke<void>("convert_format", { driveId, itemId, format, savePath });
+  return invoke<void>("convert_format", { cloudEnv, driveId, itemId, format, savePath });
 }
 
 /**
@@ -135,9 +142,34 @@ export function convertFormat(
  */
 export function getPreviewUrl(
   driveId: string,
-  itemId: string
+  itemId: string,
+  cloudEnv: CloudEnvironment
 ): Promise<string> {
-  return invoke<string>("get_preview_url", { driveId, itemId });
+  return invoke<string>("get_preview_url", { driveId, itemId, cloudEnv });
+}
+
+/**
+ * Get a thumbnail URL for an image or video drive item.
+ * Prefers the largest Graph-provided size and falls back to smaller sizes.
+ */
+export function getThumbnailUrl(
+  driveId: string,
+  itemId: string,
+  cloudEnv: CloudEnvironment
+): Promise<string> {
+  return invoke<string>("get_thumbnail_url", { driveId, itemId, cloudEnv });
+}
+
+/**
+ * Get the total size of a drive item.
+ * Files return their direct size; folders are summed recursively by the backend.
+ */
+export function getItemSize(
+  driveId: string,
+  itemId: string,
+  cloudEnv: CloudEnvironment
+): Promise<number> {
+  return invoke<number>("get_item_size", { driveId, itemId, cloudEnv });
 }
 
 /**
@@ -145,9 +177,27 @@ export function getPreviewUrl(
  */
 export function getItemProperties(
   driveId: string,
-  itemId: string
-): Promise<ItemProperties> {
-  return invoke<ItemProperties>("get_item_properties", { driveId, itemId });
+  itemId: string,
+  cloudEnv: CloudEnvironment
+): Promise<DriveItem> {
+  return invoke<DriveItem>("get_item_properties", { driveId, itemId, cloudEnv });
+}
+
+/**
+ * Read a text-based file's content for Markdown/code/plain-text preview.
+ */
+export function getTextContent(
+  driveId: string,
+  itemId: string,
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
+): Promise<string> {
+  return invoke<string>("get_text_content", {
+    driveId,
+    itemId,
+    cloudEnv,
+    homeAccountId,
+  });
 }
 
 // ─── SharePoint ─────────────────────────────────────────────────────────────
@@ -157,23 +207,31 @@ export function getItemProperties(
  * Uses search for Global, groups-based discovery for China environment.
  */
 export function getSharepointSites(
-  cloudEnv: CloudEnvironment
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
 ): Promise<Site[]> {
-  return invoke<Site[]>("get_sharepoint_sites", { cloudEnv });
+  return invoke<Site[]>("get_sharepoint_sites", { cloudEnv, homeAccountId });
 }
 
 /**
  * Get document libraries (drives) within a SharePoint site.
  */
-export function getSiteDrives(siteId: string): Promise<Drive[]> {
-  return invoke<Drive[]>("get_site_drives", { siteId });
+export function getSiteDrives(
+  siteId: string,
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
+): Promise<Drive[]> {
+  return invoke<Drive[]>("get_site_drives", { siteId, cloudEnv, homeAccountId });
 }
 
 /**
  * Get drives shared with the current user.
  */
-export function getSharedDrives(): Promise<Drive[]> {
-  return invoke<Drive[]>("get_shared_drives");
+export function getSharedDrives(
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
+): Promise<Drive[]> {
+  return invoke<Drive[]>("get_shared_drives", { cloudEnv, homeAccountId });
 }
 
 // ─── Transfers: Downloads ───────────────────────────────────────────────────
@@ -185,9 +243,21 @@ export function getSharedDrives(): Promise<Drive[]> {
 export function downloadFile(
   driveId: string,
   itemId: string,
-  localPath: string
-): Promise<string> {
-  return invoke<string>("download_file", { driveId, itemId, localPath });
+  homeAccountId: string,
+  fileName: string,
+  fileSize: number,
+  localPath: string,
+  cloudEnv: CloudEnvironment
+): Promise<BatchInfo> {
+  return invoke<BatchInfo>("download_file", {
+    cloudEnv,
+    driveId,
+    itemId,
+    homeAccountId,
+    fileName,
+    fileSize,
+    localPath,
+  });
 }
 
 /**
@@ -197,9 +267,47 @@ export function downloadFile(
 export function downloadFolder(
   driveId: string,
   itemId: string,
-  localPath: string
-): Promise<string> {
-  return invoke<string>("download_folder", { driveId, itemId, localPath });
+  localPath: string,
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string,
+  batchName: string
+): Promise<BatchInfo> {
+  return invoke<BatchInfo>("download_folder", {
+    driveId,
+    itemId,
+    localPath,
+    cloudEnv,
+    homeAccountId,
+    batchName,
+  });
+}
+
+/**
+ * Start downloading multiple selected files into one local directory as a batch.
+ */
+export function downloadFiles(
+  driveId: string,
+  homeAccountId: string,
+  files: DownloadFileSpec[],
+  localDir: string,
+  cloudEnv: CloudEnvironment,
+  batchName: string
+): Promise<BatchInfo> {
+  return invoke<BatchInfo>("download_files", {
+    driveId,
+    homeAccountId,
+    files,
+    localDir,
+    cloudEnv,
+    batchName,
+  });
+}
+
+/**
+ * Load persisted download batches after app restart.
+ */
+export function getDownloadTasks(): Promise<BatchSnapshot[]> {
+  return invoke<BatchSnapshot[]>("get_download_tasks");
 }
 
 /** Pause an active download task. */
@@ -208,13 +316,21 @@ export function pauseDownload(taskId: string): Promise<void> {
 }
 
 /** Resume a paused download task. */
-export function resumeDownload(taskId: string): Promise<void> {
-  return invoke<void>("resume_download", { taskId });
+export function resumeDownload(
+  cloudEnv: CloudEnvironment,
+  taskId: string
+): Promise<void> {
+  return invoke<void>("resume_download", { cloudEnv, taskId });
 }
 
 /** Cancel a download task and clean up partial files. */
 export function cancelDownload(taskId: string): Promise<void> {
   return invoke<void>("cancel_download", { taskId });
+}
+
+/** Remove a download task from the list. Completed files are kept on disk. */
+export function removeDownloadTask(taskId: string): Promise<void> {
+  return invoke<void>("remove_download", { taskId });
 }
 
 // ─── Transfers: Uploads ─────────────────────────────────────────────────────
@@ -226,9 +342,10 @@ export function cancelDownload(taskId: string): Promise<void> {
 export function uploadFiles(
   driveId: string,
   parentId: string,
-  filePaths: string[]
+  filePaths: string[],
+  cloudEnv: CloudEnvironment
 ): Promise<string[]> {
-  return invoke<string[]>("upload_files", { driveId, parentId, filePaths });
+  return invoke<string[]>("upload_files", { driveId, parentId, filePaths, cloudEnv });
 }
 
 /**
@@ -238,9 +355,10 @@ export function uploadFiles(
 export function uploadFolder(
   driveId: string,
   parentId: string,
-  folderPath: string
-): Promise<string> {
-  return invoke<string>("upload_folder", { driveId, parentId, folderPath });
+  folderPath: string,
+  cloudEnv: CloudEnvironment
+): Promise<string[]> {
+  return invoke<string[]>("upload_folder", { driveId, parentId, folderPath, cloudEnv });
 }
 
 /** Cancel an upload task. */
@@ -261,8 +379,11 @@ export function openContainingFolder(path: string): Promise<void> {
 // ─── Storage ────────────────────────────────────────────────────────────────
 
 /** Get storage quota information for a specific drive. */
-export function getDriveQuota(driveId: string): Promise<DriveQuota> {
-  return invoke<DriveQuota>("get_drive_quota", { driveId });
+export function getDriveQuota(
+  driveId: string,
+  cloudEnv: CloudEnvironment
+): Promise<DriveQuota> {
+  return invoke<DriveQuota>("get_drive_quota", { driveId, cloudEnv });
 }
 
 // ─── External Downloader ────────────────────────────────────────────────────

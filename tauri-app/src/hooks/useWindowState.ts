@@ -17,8 +17,9 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
-import { getConfig, saveConfig } from "../lib/tauri";
+import { getConfig } from "../lib/tauri";
 import type { AppConfig, WindowState } from "../lib/types";
+import { useSettingsStore } from "../stores/settingsStore";
 
 /** Default window dimensions matching tauri.conf.json */
 const DEFAULT_WIDTH = 1024;
@@ -81,6 +82,13 @@ export function useWindowState(): void {
         // Load config from backend
         const config = await getConfig();
         configRef.current = config;
+        useSettingsStore.setState({
+          theme: config.theme,
+          language: config.language,
+          window: config.window,
+          lastDownloadPath: config.lastDownloadPath ?? null,
+          isLoaded: true,
+        });
         const windowState = config.window;
 
         // Get available monitors for bounds checking
@@ -141,16 +149,8 @@ export function useWindowState(): void {
           isMaximized,
         };
 
-        // Merge with existing config
-        const currentConfig = configRef.current;
-        if (currentConfig) {
-          const updatedConfig: AppConfig = {
-            ...currentConfig,
-            window: newWindowState,
-          };
-          configRef.current = updatedConfig;
-          await saveConfig(updatedConfig);
-        }
+        // Persist through settingsStore so other config fields are never lost.
+        useSettingsStore.getState().setWindowState(newWindowState);
       } catch (err) {
         console.warn("Failed to save window state:", err);
       }

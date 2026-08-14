@@ -9,6 +9,8 @@ interface SettingsState {
   language: string;
   /** Current window position and dimensions. */
   window: WindowState;
+  /** Last directory used for downloads. */
+  lastDownloadPath: string | null;
   /** Whether the initial config has been loaded from the backend. */
   isLoaded: boolean;
 
@@ -20,6 +22,8 @@ interface SettingsState {
   setLanguage: (lang: string) => void;
   /** Update the window state and persist to backend. */
   setWindowState: (state: WindowState) => void;
+  /** Update the last used download directory and persist to backend. */
+  setLastDownloadPath: (path: string | null) => void;
 }
 
 /** Default window state used before config is loaded. */
@@ -43,8 +47,9 @@ function persistConfig(config: AppConfig): void {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   theme: "system",
-  language: "en-US",
+  language: "system",
   window: defaultWindow,
+  lastDownloadPath: null,
   isLoaded: false,
 
   loadConfig: async () => {
@@ -54,6 +59,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         theme: config.theme,
         language: config.language,
         window: config.window,
+        lastDownloadPath: config.lastDownloadPath ?? null,
         isLoaded: true,
       });
     } catch (err) {
@@ -66,18 +72,44 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setTheme: (mode) => {
     set({ theme: mode });
     const state = get();
-    persistConfig({ theme: mode, language: state.language, window: state.window });
+    persistConfig({
+      theme: mode,
+      language: state.language,
+      window: state.window,
+      lastDownloadPath: state.lastDownloadPath,
+    });
   },
 
   setLanguage: (lang) => {
     set({ language: lang });
     const state = get();
-    persistConfig({ theme: state.theme, language: lang, window: state.window });
+    persistConfig({
+      theme: state.theme,
+      language: lang,
+      window: state.window,
+      lastDownloadPath: state.lastDownloadPath,
+    });
   },
 
   setWindowState: (windowState) => {
     set({ window: windowState });
     const state = get();
-    persistConfig({ theme: state.theme, language: state.language, window: windowState });
+    persistConfig({
+      theme: state.theme,
+      language: state.language,
+      window: windowState,
+      lastDownloadPath: state.lastDownloadPath,
+    });
+  },
+
+  setLastDownloadPath: (path) => {
+    set({ lastDownloadPath: path });
+    const state = get();
+    persistConfig({
+      theme: state.theme,
+      language: state.language,
+      window: state.window,
+      lastDownloadPath: path,
+    });
   },
 }));

@@ -350,6 +350,14 @@ ASALocalRun/
 # Local History for Visual Studio
 .localhistory/
 
+# Local agent secrets
+AGENTS.local.md
+
+# Local runtime artifacts
+cache
+error.log
+ShareOneList-v1.7-x64.zip
+
 # BeatPulse healthcheck temp database
 healthchecksdb
 
@@ -362,10 +370,3 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-SimepleList/SimpleList - Backup.csproj
-cache
-error.log
-ShareOneList-v1.7-x64.zip
-build.ps1
-run.ps1
-tauri-app/src-tauri/src/auth/mod.rs

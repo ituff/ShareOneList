@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { getErrorMessage } from "../../lib/errors";
 
 interface UpdateInfo {
   version: string;
@@ -30,11 +31,7 @@ export function UpdateChecker() {
         setState({ status: "up-to-date" });
       }
     } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : String(err);
-      setState({ status: "error", message });
+      setState({ status: "error", message: getErrorMessage(err) });
     }
   };
 
@@ -47,11 +44,7 @@ export function UpdateChecker() {
       // After opening the installer, reset to idle
       setState({ status: "idle" });
     } catch (err: unknown) {
-      const message =
-        err && typeof err === "object" && "message" in err
-          ? (err as { message: string }).message
-          : String(err);
-      setState({ status: "error", message });
+      setState({ status: "error", message: getErrorMessage(err) });
     }
   };
 

@@ -2,11 +2,12 @@ import { Suspense, useEffect } from "react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { MainContent } from "./components/layout/MainContent";
 import { ToastContainer } from "./components/ui/Toast";
+import { ReloginDialog } from "./components/accounts/ReloginDialog";
 import { useWindowState } from "./hooks/useWindowState";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAuthStore } from "./stores/authStore";
-import { initTaskListener } from "./stores/taskStore";
+import { initTaskListener, useTaskStore } from "./stores/taskStore";
 import { syncLanguageFromStore } from "./i18n";
 
 function App() {
@@ -18,7 +19,14 @@ function App() {
 
   const language = useSettingsStore((s) => s.language);
   const isLoaded = useSettingsStore((s) => s.isLoaded);
+  const loadConfig = useSettingsStore((s) => s.loadConfig);
   const loadAccounts = useAuthStore((s) => s.loadAccounts);
+  const loadDownloadTasks = useTaskStore((s) => s.loadDownloadTasks);
+
+  // Load persisted application config (theme, language, window, download path)
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
 
   // Load cached accounts from backend on startup
   useEffect(() => {
@@ -29,6 +37,11 @@ function App() {
   useEffect(() => {
     initTaskListener();
   }, []);
+
+  // Restore paused/interrupted download batches after app restart
+  useEffect(() => {
+    loadDownloadTasks();
+  }, [loadDownloadTasks]);
 
   // Sync i18n language with settings store once config is loaded
   useEffect(() => {
@@ -46,6 +59,7 @@ function App() {
         </main>
       </div>
       <ToastContainer />
+      <ReloginDialog />
     </Suspense>
   );
 }

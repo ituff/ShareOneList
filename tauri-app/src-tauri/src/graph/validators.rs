@@ -20,7 +20,7 @@ const MAX_NAME_LENGTH: usize = 400;
 ///
 /// # Examples
 /// ```
-/// use crate::graph::validators::validate_file_name;
+/// use share_one_list_lib::graph::validators::validate_file_name;
 ///
 /// assert!(validate_file_name("valid-file.txt").is_ok());
 /// assert!(validate_file_name("").is_err());

@@ -71,11 +71,10 @@ async fn push_to_aria2(config: &ExternalDownloaderConfig) -> Result<(), AppError
     }
 
     // Check for JSON-RPC error in response
-    let resp_body: serde_json::Value =
-        response.json().await.map_err(|e| AppError::Network {
-            message: format!("Failed to parse RPC response: {}", e),
-            retryable: false,
-        })?;
+    let resp_body: serde_json::Value = response.json().await.map_err(|e| AppError::Network {
+        message: format!("Failed to parse RPC response: {}", e),
+        retryable: false,
+    })?;
 
     if let Some(error) = resp_body.get("error") {
         let error_msg = error
