@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-ShareOneList 是 Microsoft 365 的 OneDrive / SharePoint 文件管理客户端，fork 自 [aiguoli/SimpleList](https://github.com/aiguoli/SimpleList)，并增加世纪互联（21Vianet）版支持。
+ShareOneList 是 Microsoft 365 的跨平台 OneDrive / SharePoint 文件管理客户端，基于 Tauri 2 构建，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），同时支持国际版和世纪互联（21Vianet）版。
 
 仓库同时存在两条产品线：
 
@@ -21,7 +21,7 @@ ShareOneList 是 Microsoft 365 的 OneDrive / SharePoint 文件管理客户端�
 - `.kiro/specs/tauri-rewrite/design.md`：Tauri 架构、模块接口、数据模型、正确性属性和测试策略。
 - `.kiro/specs/tauri-rewrite/tasks.md`：实现任务清单，当前任务均标记完成。
 
-README 仍偏旧版 WinUI 描述；遇到 README 与 spec 不一致时，以 `.kiro/specs/tauri-rewrite/` 和实际代码为准。
+README 以 Tauri 2 主路径为准；遇到 README 与 spec 不一致时，以 `.kiro/specs/tauri-rewrite/` 和实际代码为准。
 
 ## 技术栈
 

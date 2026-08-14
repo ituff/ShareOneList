@@ -115,8 +115,8 @@
     "about": "About",
     "aboutDescription": "OneDrive & SharePoint, Global & China — one app for all your clouds",
     "version": "Version",
-    "credits": "Based on SimpleList by aiguoli",
-    "creditsDescription": "Thanks to the original author for the open-source contribution",
+    "credits": "ShareOneList Contributors",
+    "creditsDescription": "Cross-platform OneDrive & SharePoint file manager built with Tauri",
     "checkUpdate": "Check for Update",
     "downloadUpdate": "Download",
     "upToDate": "You are using the latest version."
