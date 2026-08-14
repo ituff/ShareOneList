@@ -21,7 +21,7 @@ ShareOneList is a cross-platform file management client for Microsoft 365, suppo
 
 ## Getting Started
 
-1. Download the latest release from [Releases](https://github.com/ituff/SimpleList21V/releases)
+1. Download the latest release from [Releases](https://github.com/ituff/ShareOneList/releases)
 2. Install or run `ShareOneList`
 3. Click **Files** in the sidebar, then **Add drive** to sign in with your Microsoft account
 4. Double-click a drive to browse files
@@ -73,5 +73,3 @@ cd tauri-app
 npm install
 npm run tauri dev
 ```
-
-The old WinUI 3 implementation is kept in `SimpleList/` for reference only; all new development happens in `tauri-app/`.
