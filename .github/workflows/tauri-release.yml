@@ -96,9 +96,6 @@ jobs:
           Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $staging | Out-Null
           Copy-Item -LiteralPath $exe -Destination (Join-Path $staging "ShareOneList.exe")
-          Get-ChildItem -LiteralPath $releaseDir -File | Where-Object {
-            $_.Extension -in ".dll", ".dat", ".json", ".pak"
-          } | Copy-Item -Destination $staging -Force
           $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-x64.zip"
           Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
