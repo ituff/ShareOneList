@@ -33,9 +33,16 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
   };
 
   const getCloudLabel = (cloudType: CloudEnvironment): string => {
-    return cloudType === "global"
+    return cloudType.toLowerCase() === "global"
       ? t("accounts.cloudGlobal")
       : t("accounts.cloudChina");
+  };
+
+  const getDisplayName = (account: AccountEntry): string => {
+    if (account.displayName && account.displayName !== "Unknown User") {
+      return account.displayName;
+    }
+    return getCloudLabel(account.cloudType);
   };
 
   const CloudIcon = ({ cloudType }: { cloudType: CloudEnvironment }) => {
@@ -87,7 +94,7 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
                 <CloudIcon cloudType={account.cloudType} />
                 <div>
                   <div className="text-sm font-medium text-foreground">
-                    {account.displayName}
+                    {getDisplayName(account)}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {getCloudLabel(account.cloudType)}

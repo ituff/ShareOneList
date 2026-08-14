@@ -2,10 +2,16 @@ import { useTranslation } from "react-i18next";
 import { HardDrive, Building2, Users, ArrowLeft } from "lucide-react";
 import type { AccountEntry, CloudEnvironment } from "../../lib/types";
 import { StorageInfo } from "./StorageInfo";
+import { useToastStore } from "../../stores/toastStore";
 
 interface DriveHubPageProps {
   account: AccountEntry;
-  onDriveSelect: (driveId: string, driveName: string, cloudEnv: CloudEnvironment) => void;
+  onDriveSelect: (
+    driveId: string,
+    driveName: string,
+    cloudEnv: CloudEnvironment,
+    homeAccountId: string
+  ) => void;
   onSharePointSelect: () => void;
   onSharedSelect: () => void;
   onBack: () => void;
@@ -23,9 +29,14 @@ export function DriveHubPage({
   onBack,
 }: DriveHubPageProps) {
   const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
 
   const handleOneDrive = () => {
-    onDriveSelect(account.driveId, account.displayName, account.cloudType);
+    if (!account.driveId) {
+      addToast("error", t("driveHub.noOneDriveDesc"));
+      return;
+    }
+    onDriveSelect(account.driveId, account.displayName, account.cloudType, account.homeAccountId);
   };
 
   return (
@@ -40,7 +51,11 @@ export function DriveHubPage({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h3 className="text-lg font-semibold text-foreground">
-          {account.displayName}
+          {account.displayName === "Unknown User"
+            ? account.cloudType.toLowerCase() === "global"
+              ? t("accounts.cloudGlobal")
+              : t("accounts.cloudChina")
+            : account.displayName}
         </h3>
       </div>
 

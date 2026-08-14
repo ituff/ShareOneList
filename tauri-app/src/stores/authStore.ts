@@ -11,6 +11,10 @@ interface AuthState {
   isLoggingIn: boolean;
   /** Error message from the last failed operation. */
   error: string | null;
+  /** Pending re-login requested after an expired credential error. */
+  pendingRelogin:
+    | { cloudEnv: CloudEnvironment; tabId?: string; folderId?: string; taskId?: string }
+    | null;
 
   /** Load cached accounts from backend on startup. */
   loadAccounts: () => Promise<void>;
@@ -26,6 +30,14 @@ interface AuthState {
   removeAccount: (homeAccountId: string, cloudEnv: CloudEnvironment) => Promise<void>;
   /** Clear the current error. */
   clearError: () => void;
+  /** Queue a re-login flow after an expired credential error. */
+  setPendingRelogin: (
+    pending: { cloudEnv: CloudEnvironment; tabId?: string; folderId?: string; taskId?: string }
+  ) => void;
+  /** Clear the pending re-login request. */
+  clearPendingRelogin: () => void;
+  /** Re-login an existing account and update its stored entry. */
+  reloginAccount: (cloudEnv: CloudEnvironment) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -33,11 +45,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoaded: false,
   isLoggingIn: false,
   error: null,
+  pendingRelogin: null,
 
   loadAccounts: async () => {
     try {
       const accounts = await getAccounts();
-      set({ accounts, isLoaded: true });
+      // Older builds persisted cloudType as "Global"/"China"; normalize it here.
+      const normalized = accounts.map((account) => ({
+        ...account,
+        cloudType: account.cloudType.toLowerCase() as CloudEnvironment,
+      }));
+      set({ accounts: normalized, isLoaded: true });
     } catch (err) {
       console.error("[authStore] Failed to load accounts:", err);
       // Mark as loaded even on failure so the app can proceed
@@ -87,7 +105,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   removeAccount: async (homeAccountId, cloudEnv) => {
     try {
-      await logout(cloudEnv);
+      await logout(cloudEnv, homeAccountId);
     } catch (err) {
       console.error("[authStore] Logout backend call failed:", err);
       // Continue with removal even if backend logout fails
@@ -101,4 +119,39 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  setPendingRelogin: (pending) => set({ pendingRelogin: pending }),
+
+  clearPendingRelogin: () => set({ pendingRelogin: null }),
+
+  reloginAccount: async (cloudEnv) => {
+    set({ isLoggingIn: true, error: null });
+    try {
+      const accountInfo = await login(cloudEnv);
+      const newEntry: AccountEntry = {
+        homeAccountId: accountInfo.homeAccountId,
+        driveId: accountInfo.driveId,
+        cloudType: accountInfo.cloudEnv,
+        displayName: accountInfo.displayName,
+      };
+      set((state) => ({
+        accounts: [
+          ...state.accounts.filter(
+            (account) =>
+              !(
+                account.homeAccountId === newEntry.homeAccountId &&
+                account.cloudType === newEntry.cloudType
+              )
+          ),
+          newEntry,
+        ],
+        isLoggingIn: false,
+        error: null,
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      set({ isLoggingIn: false, error: message });
+      throw err;
+    }
+  },
 }));

@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import {
   House,
   FolderOpen,
+  Bookmark,
   Download,
   Wrench,
   Settings,
@@ -21,6 +22,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { id: "home", labelKey: "nav.home", icon: House },
   { id: "files", labelKey: "nav.files", icon: FolderOpen },
+  { id: "bookmarks", labelKey: "nav.bookmarks", icon: Bookmark },
   { id: "tasks", labelKey: "nav.taskManager", icon: Download },
   { id: "tools", labelKey: "nav.tools", icon: Wrench },
   { id: "settings", labelKey: "nav.settings", icon: Settings },

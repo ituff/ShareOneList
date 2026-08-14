@@ -7,6 +7,9 @@ import type {
   TabState,
 } from "../lib/types";
 import { listFiles } from "../lib/tauri";
+import { getErrorMessage } from "../lib/errors";
+import { isAuthError } from "../lib/errors";
+import { useAuthStore } from "./authStore";
 
 /** Maximum number of simultaneous tabs allowed. */
 const MAX_TABS = 10;
@@ -27,7 +30,33 @@ interface TabStoreState {
    * If a tab for that driveId already exists, switch to it.
    * Otherwise create a new tab (up to MAX_TABS). If max reached, do nothing.
    */
-  openTab: (driveId: string, driveName: string, cloudEnv: CloudEnvironment) => void;
+  openTab: (
+    driveId: string,
+    driveName: string,
+    cloudEnv: CloudEnvironment,
+    homeAccountId: string
+  ) => void;
+
+  /**
+   * Open a preview tab for a file.
+   * If a preview tab for that item already exists, switch to it.
+   */
+  openPreviewTab: (
+    item: DriveItem,
+    driveId: string,
+    cloudEnv: CloudEnvironment,
+    homeAccountId: string
+  ) => void;
+
+  /** Open a new tab at a specific folder. */
+  openTabAtFolder: (
+    driveId: string,
+    driveName: string,
+    cloudEnv: CloudEnvironment,
+    homeAccountId: string,
+    folderId: string,
+    folderName: string
+  ) => void;
 
   /** Close a tab by ID. Switch to nearest remaining tab (prefer right, then left). */
   closeTab: (tabId: string) => void;
@@ -51,6 +80,12 @@ interface TabStoreState {
   /** Navigate to a breadcrumb by index within a tab. */
   navigateToBreadcrumb: (tabId: string, index: number) => void;
 
+  /** Navigate a tab up one directory level. */
+  navigateUp: (tabId: string) => void;
+
+  /** Navigate a tab back to its root folder. */
+  navigateToRoot: (tabId: string) => void;
+
   /** Set the layout mode for a tab. */
   setTabLayoutMode: (tabId: string, mode: LayoutMode) => void;
 }
@@ -73,11 +108,11 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
   tabs: [],
   activeTabId: null,
 
-  openTab: (driveId, driveName, cloudEnv) => {
+  openTab: (driveId, driveName, cloudEnv, homeAccountId) => {
     const { tabs } = get();
 
     // If a tab for this drive already exists, switch to it
-    const existing = tabs.find((t) => t.driveId === driveId);
+    const existing = tabs.find((t) => t.kind === "drive" && t.driveId === driveId);
     if (existing) {
       set({ activeTabId: existing.id });
       return;
@@ -91,14 +126,17 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
     // Create new tab
     const newTab: TabState = {
       id: generateTabId(),
+      kind: "drive",
       driveId,
       driveName,
       cloudEnv,
+      homeAccountId,
       currentFolderId: "root",
-      breadcrumbs: [{ id: "root", name: driveName }],
+      breadcrumbs: [],
       items: [],
       layoutMode: "list",
       isLoading: true,
+      error: null,
     };
 
     set({
@@ -108,6 +146,44 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
 
     // Load root folder contents
     get().loadFolder(newTab.id, "root");
+  },
+
+  openPreviewTab: (item, driveId, cloudEnv, homeAccountId) => {
+    const { tabs } = get();
+    const existing = tabs.find((t) => t.kind === "preview" && t.previewItem?.id === item.id);
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+
+    const newTab: TabState = {
+      id: generateTabId(),
+      kind: "preview",
+      driveId,
+      driveName: item.name,
+      cloudEnv,
+      homeAccountId,
+      previewItem: item,
+      currentFolderId: "root",
+      breadcrumbs: [],
+      items: [],
+      layoutMode: "list",
+      isLoading: false,
+      error: null,
+    };
+
+    set({
+      tabs: [...tabs, newTab],
+      activeTabId: newTab.id,
+    });
+  },
+
+  openTabAtFolder: (driveId, driveName, cloudEnv, homeAccountId, folderId, folderName) => {
+    get().openTab(driveId, driveName, cloudEnv, homeAccountId);
+    const activeTabId = get().activeTabId;
+    if (activeTabId) {
+      get().navigateToFolder(activeTabId, folderId, folderName);
+    }
   },
 
   closeTab: (tabId) => {
@@ -155,7 +231,11 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
     if (!tab) return;
 
     // Set loading state
-    get().updateTabState(tabId, { isLoading: true, currentFolderId: folderId });
+    get().updateTabState(tabId, {
+      isLoading: true,
+      currentFolderId: folderId,
+      error: null,
+    });
 
     try {
       const rawItems = await listFiles(tab.driveId, folderId, tab.cloudEnv);
@@ -165,10 +245,18 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
         items: visible,
         isLoading: false,
       });
-    } catch {
+    } catch (err) {
+      if (isAuthError(err)) {
+        useAuthStore.getState().setPendingRelogin({
+          cloudEnv: tab.cloudEnv,
+          tabId,
+          folderId,
+        });
+      }
       get().updateTabState(tabId, {
         items: [],
         isLoading: false,
+        error: getErrorMessage(err, "Failed to load folder"),
       });
     }
   },
@@ -195,6 +283,32 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
     const trimmed = tab.breadcrumbs.slice(0, index + 1);
     get().updateTabState(tabId, { breadcrumbs: trimmed });
     get().loadFolder(tabId, target.id);
+  },
+
+  navigateUp: (tabId) => {
+    const { tabs } = get();
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || tab.kind !== "drive") return;
+
+    if (tab.breadcrumbs.length === 0) {
+      return;
+    }
+    if (tab.breadcrumbs.length === 1) {
+      get().updateTabState(tabId, { breadcrumbs: [] });
+      get().loadFolder(tabId, "root");
+      return;
+    }
+    get().navigateToBreadcrumb(tabId, tab.breadcrumbs.length - 2);
+  },
+
+  navigateToRoot: (tabId) => {
+    const { tabs } = get();
+    const tab = tabs.find((t) => t.id === tabId);
+    if (!tab || tab.kind !== "drive") return;
+    get().updateTabState(tabId, {
+      breadcrumbs: [],
+    });
+    get().loadFolder(tabId, "root");
   },
 
   setTabLayoutMode: (tabId, mode) => {

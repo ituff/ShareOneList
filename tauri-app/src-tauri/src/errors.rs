@@ -40,7 +40,10 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::Network { message, .. } => write!(f, "Network error: {}", message),
             AppError::Auth { message, .. } => write!(f, "Auth error: {}", message),
-            AppError::GraphApi { message, status_code } => {
+            AppError::GraphApi {
+                message,
+                status_code,
+            } => {
                 write!(f, "Graph API error ({}): {}", status_code, message)
             }
             AppError::FileSystem { message, path } => {

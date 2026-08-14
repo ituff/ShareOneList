@@ -1,7 +1,7 @@
 /**
  * Frontend TypeScript types mirroring the Rust backend data models.
  * These interfaces are serialized/deserialized across the Tauri IPC bridge.
- * Property names use camelCase — Tauri's serde rename handles snake_case conversion.
+ * Property names use camelCase; the Rust models use serde rename_all = "camelCase".
  */
 
 // ─── File & Drive Models ────────────────────────────────────────────────────
@@ -67,14 +67,20 @@ export type LayoutMode = "list" | "grid" | "gallery";
 /** Per-tab state for multi-tab file browsing. */
 export interface TabState {
   id: string;
+  /** Whether this tab browses a drive or previews a file. */
+  kind: "drive" | "preview";
   driveId: string;
   driveName: string;
   cloudEnv: CloudEnvironment;
+  homeAccountId: string;
+  /** The file being previewed when kind is "preview". */
+  previewItem?: DriveItem;
   currentFolderId: string;
   breadcrumbs: BreadcrumbItem[];
   items: DriveItem[];
   layoutMode: LayoutMode;
   isLoading: boolean;
+  error: string | null;
 }
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -96,6 +102,8 @@ export interface AppConfig {
   theme: ThemeMode;
   language: string;
   window: WindowState;
+  /** Last directory used by the native save dialog for downloads. */
+  lastDownloadPath: string | null;
 }
 
 /** A persisted account entry linking a user to a specific drive. */
@@ -104,6 +112,48 @@ export interface AccountEntry {
   driveId: string;
   cloudType: CloudEnvironment;
   displayName: string;
+}
+
+/** Result returned when a download batch is created. */
+export interface BatchInfo {
+  batchId: string;
+  batchName: string;
+}
+
+/** A single file to include in a batch download. */
+export interface DownloadFileSpec {
+  itemId: string;
+  fileName: string;
+  fileSize: number;
+}
+
+/** A user bookmark pointing to a file or folder in a drive. */
+export interface BookmarkEntry {
+  id: string;
+  name: string;
+  driveId: string;
+  driveName: string;
+  itemId: string;
+  cloudEnv: CloudEnvironment;
+  homeAccountId: string;
+  isFolder: boolean;
+  createdAt: string;
+}
+
+/** Snapshot of a persisted download batch used to restore tasks on startup. */
+export interface BatchSnapshot {
+  id: string;
+  name: string;
+  status: TaskStatus;
+  totalBytes: number;
+  downloadedBytes: number;
+  speedBps: number;
+  elapsedSecs: number;
+  error: string | null;
+  localPath: string;
+  cloudEnv: CloudEnvironment;
+  driveId: string;
+  homeAccountId: string;
 }
 
 // ─── Account Info ───────────────────────────────────────────────────────────
@@ -155,6 +205,8 @@ export interface ProgressEvent {
   speedBps: number;
   elapsedSecs: number;
   error: string | null;
+  /** Actual local path of the transferred file (downloads only). */
+  localPath: string | null;
 }
 
 // ─── External Downloader ────────────────────────────────────────────────────
