@@ -46,62 +46,88 @@ fn is_newer(remote: &str, local: &str) -> bool {
     false
 }
 
-/// Asset preferences for the current platform, in order of priority.
-/// The first matching asset is used, so installers win over portable zips.
-fn platform_asset_preferences() -> Vec<&'static str> {
+/// Architecture fragment used to identify this platform's assets.
+fn platform_arch_fragment() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    {
+        "arm64"
+    }
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    {
+        "x64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "aarch64"
+    }
+    // Fallback for other platforms.
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+    )))]
+    {
+        "x64"
+    }
+}
+
+/// Installer extensions preferred for the current platform, in order of priority.
+fn platform_installer_extensions() -> Vec<&'static str> {
     #[cfg(target_os = "windows")]
     {
-        vec![
-            ".msi",
-            ".exe",
-            ".zip",
-            #[cfg(target_arch = "aarch64")]
-            "arm64",
-            #[cfg(target_arch = "x86_64")]
-            "x64",
-        ]
+        vec![".msi", ".exe"]
     }
     #[cfg(target_os = "macos")]
     {
-        vec![
-            ".dmg",
-            ".app",
-            ".zip",
-            "macos",
-            #[cfg(target_arch = "aarch64")]
-            "aarch64",
-        ]
+        vec![".dmg", ".app"]
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        vec!["x64", "amd64"]
+        vec![]
     }
 }
 
 /// Pick the release asset best suited for this platform.
 fn select_platform_asset<'a>(assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
-    select_platform_asset_with_preferences(assets, &platform_asset_preferences())
+    let arch = platform_arch_fragment();
+    let installers = platform_installer_extensions();
+    select_platform_asset_with_preferences(assets, arch, &installers)
 }
 
 fn select_platform_asset_with_preferences<'a>(
     assets: &'a [GitHubAsset],
-    preferences: &[&str],
+    arch_fragment: &str,
+    installer_extensions: &[&str],
 ) -> Option<&'a GitHubAsset> {
     let lower_names: Vec<String> = assets
         .iter()
         .map(|a| a.name.to_lowercase())
         .collect();
 
-    for preference in preferences {
+    // Prefer an installer for this exact architecture.
+    for extension in installer_extensions {
+        if let Some(index) = lower_names.iter().position(|name| {
+            name.contains(arch_fragment) && name.ends_with(extension)
+        }) {
+            return assets.get(index);
+        }
+    }
+
+    // Fall back to an installer without an architecture match, then to any
+    // architecture-specific asset (e.g. a portable zip).
+    for extension in installer_extensions {
         if let Some(index) = lower_names
             .iter()
-            .position(|name| name.contains(preference))
+            .position(|name| name.ends_with(extension))
         {
             return assets.get(index);
         }
     }
 
-    None
+    lower_names
+        .iter()
+        .position(|name| name.contains(arch_fragment))
+        .and_then(|index| assets.get(index))
 }
 
 /// Check GitHub releases for a newer version.
@@ -253,11 +279,12 @@ mod tests {
     fn test_select_windows_installer_over_zip() {
         let assets = vec![
             asset("ShareOneList-v2.0.0-x64.zip"),
-            asset("ShareOneList_2.0.0_x64-setup.exe"),
+            asset("ShareOneList_2.0.0_arm64_en-US.msi"),
+            asset("ShareOneList_2.0.0_x64_en-US.msi"),
         ];
-        let selected = select_platform_asset_with_preferences(&assets, &[".msi", ".exe", ".zip"])
+        let selected = select_platform_asset_with_preferences(&assets, "x64", &[".msi", ".exe"])
             .expect("asset should be selected");
-        assert!(selected.name.ends_with(".exe"));
+        assert_eq!(selected.name, "ShareOneList_2.0.0_x64_en-US.msi");
     }
 
     #[test]
@@ -266,7 +293,7 @@ mod tests {
             asset("ShareOneList_2.0.0_aarch64.dmg"),
             asset("ShareOneList-v2.0.0-macos.zip"),
         ];
-        let selected = select_platform_asset_with_preferences(&assets, &[".dmg", ".app", ".zip"])
+        let selected = select_platform_asset_with_preferences(&assets, "aarch64", &[".dmg", ".app"])
             .expect("asset should be selected");
         assert!(selected.name.ends_with(".dmg"));
     }
