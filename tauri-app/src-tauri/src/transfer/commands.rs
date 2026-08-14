@@ -8,7 +8,7 @@ use crate::auth::cloud_config::CloudEnvironment;
 use crate::auth::AuthModule;
 use crate::errors::AppError;
 use crate::graph::GraphClient;
-use crate::transfer::download::{DownloadEngine, DownloadParams};
+use crate::transfer::download::{BatchInfo, BatchSnapshot, DownloadEngine, DownloadParams};
 use crate::transfer::upload::{upload_folder_recursive, UploadEngine, UploadParams};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,6 +30,13 @@ fn parse_cloud_env(cloud_env: &str) -> Result<CloudEnvironment, AppError> {
     }
 }
 
+fn env_string(env: &CloudEnvironment) -> String {
+    match env {
+        CloudEnvironment::Global => "global".to_string(),
+        CloudEnvironment::China => "china".to_string(),
+    }
+}
+
 /// Graph API collection response wrapper.
 #[derive(Debug, Deserialize)]
 struct GraphCollection<T> {
@@ -46,37 +53,24 @@ struct RawDriveItem {
     name: Option<String>,
     size: Option<u64>,
     folder: Option<serde_json::Value>,
-    #[serde(rename = "@microsoft.graph.downloadUrl")]
-    download_url: Option<String>,
+    #[serde(rename = "remoteItem")]
+    remote_item: Option<TransferRemoteItem>,
+    package: Option<serde_json::Value>,
 }
 
-/// Fetch the download URL for a single item from Graph API.
-async fn fetch_download_url(
-    client: &GraphClient,
-    token: &str,
-    drive_id: &str,
-    item_id: &str,
-) -> Result<String, AppError> {
-    let url = format!(
-        "{}/drives/{}/items/{}",
-        client.base_url(),
-        drive_id,
-        item_id
-    );
+/// A single file to include in a batch download.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDownloadSpec {
+    item_id: String,
+    file_name: String,
+    file_size: u64,
+}
 
-    let response = client
-        .request_with_retry(token, |http, tkn| http.get(&url).bearer_auth(tkn))
-        .await?;
-
-    let raw: RawDriveItem = response.json().await.map_err(|e| AppError::GraphApi {
-        message: format!("Failed to parse item response: {}", e),
-        status_code: 0,
-    })?;
-
-    raw.download_url.ok_or_else(|| AppError::GraphApi {
-        message: "Item does not have a download URL".to_string(),
-        status_code: 0,
-    })
+#[derive(Debug, Deserialize)]
+struct TransferRemoteItem {
+    folder: Option<serde_json::Value>,
+    package: Option<serde_json::Value>,
 }
 
 /// Recursively list all files in a folder, creating local directories as needed.
@@ -99,9 +93,7 @@ async fn list_folder_recursive(
     loop {
         let current_url = url.clone();
         let response = client
-            .request_with_retry(token, |http, tkn| {
-                http.get(&current_url).bearer_auth(tkn)
-            })
+            .request_with_retry(token, |http, tkn| http.get(&current_url).bearer_auth(tkn))
             .await?;
 
         let collection: GraphCollection<RawDriveItem> =
@@ -114,7 +106,14 @@ async fn list_folder_recursive(
             let name = item.name.unwrap_or_default();
             let id = item.id.unwrap_or_default();
 
-            if item.folder.is_some() {
+            if item.folder.is_some()
+                || item.package.is_some()
+                || item
+                    .remote_item
+                    .as_ref()
+                    .and_then(|r| r.folder.as_ref().or(r.package.as_ref()))
+                    .is_some()
+            {
                 // Create local directory and recurse
                 let subfolder_path = local_base.join(&name);
                 tokio::fs::create_dir_all(&subfolder_path)
@@ -163,62 +162,123 @@ pub async fn download_file(
     cloud_env: String,
     drive_id: String,
     item_id: String,
+    home_account_id: String,
     file_name: String,
     file_size: u64,
     local_path: String,
     auth_module: State<'_, Mutex<AuthModule>>,
     download_engine: State<'_, Mutex<DownloadEngine>>,
-) -> Result<String, AppError> {
+) -> Result<BatchInfo, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let env_value = env_string(&env);
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
+    };
+
+    let client = GraphClient::new(env);
+    let download_url = format!(
+        "{}/drives/{}/items/{}/content",
+        client.base_url(),
+        drive_id,
+        item_id
+    );
+
+    // Create a single-file batch so the UI always sees one downloadable task.
+    let mut engine = download_engine.lock().await;
+    engine
+        .create_batch(
+            file_name.clone(),
+            vec![DownloadParams {
+                file_name,
+                home_account_id,
+                cloud_env: env_value,
+                drive_id,
+                item_id,
+                local_path: PathBuf::from(local_path),
+                total_bytes: file_size,
+                download_url,
+                bearer_token: Some(token.clone()),
+            }],
+        )
+        .await
+}
+
+/// Download multiple selected files into one local directory as a single batch task.
+#[tauri::command]
+pub async fn download_files(
+    cloud_env: String,
+    drive_id: String,
+    home_account_id: String,
+    files: Vec<FileDownloadSpec>,
+    local_dir: String,
+    batch_name: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+    download_engine: State<'_, Mutex<DownloadEngine>>,
+) -> Result<BatchInfo, AppError> {
     let env = parse_cloud_env(&cloud_env)?;
     let token = {
         let mut auth = auth_module.lock().await;
-        auth.get_token(env.clone()).await?
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
     };
 
-    // Get download URL from Graph API
     let client = GraphClient::new(env);
-    let download_url = fetch_download_url(&client, &token, &drive_id, &item_id).await?;
+    let local_base = PathBuf::from(&local_dir);
+    tokio::fs::create_dir_all(&local_base)
+        .await
+        .map_err(|e| AppError::FileSystem {
+            message: format!("Failed to create directory: {}", e),
+            path: local_dir.clone(),
+        })?;
 
-    // Create the download task
-    let mut engine = download_engine.lock().await;
-    let task_id = engine
-        .create_task(DownloadParams {
-            file_name,
-            drive_id,
-            item_id,
-            local_path: PathBuf::from(local_path),
-            total_bytes: file_size,
-            download_url,
+    let params = files
+        .into_iter()
+        .map(|file| {
+            let download_url = format!(
+                "{}/drives/{}/items/{}/content",
+                client.base_url(),
+                drive_id,
+                file.item_id
+            );
+            DownloadParams {
+                file_name: file.file_name.clone(),
+                home_account_id: home_account_id.clone(),
+                cloud_env: cloud_env.clone(),
+                drive_id: drive_id.clone(),
+                item_id: file.item_id,
+                local_path: local_base.join(&file.file_name),
+                total_bytes: file.file_size,
+                download_url,
+                bearer_token: Some(token.clone()),
+            }
         })
-        .await?;
+        .collect::<Vec<_>>();
 
-    Ok(task_id)
+    let mut engine = download_engine.lock().await;
+    engine.create_batch(batch_name, params).await
 }
 
-/// Download an entire folder recursively from OneDrive/SharePoint.
-///
-/// Lists all children recursively, creates local directory structure,
-/// and enqueues download tasks for each file.
-/// Returns a list of task IDs for tracking progress.
+/// Download an entire folder recursively as a single batch task.
 #[tauri::command]
 pub async fn download_folder(
     cloud_env: String,
     drive_id: String,
     item_id: String,
+    home_account_id: String,
     local_path: String,
+    batch_name: String,
     auth_module: State<'_, Mutex<AuthModule>>,
     download_engine: State<'_, Mutex<DownloadEngine>>,
-) -> Result<Vec<String>, AppError> {
+) -> Result<BatchInfo, AppError> {
     let env = parse_cloud_env(&cloud_env)?;
     let token = {
         let mut auth = auth_module.lock().await;
-        auth.get_token(env.clone()).await?
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
     };
 
     let client = GraphClient::new(env);
     let local_base = PathBuf::from(&local_path);
 
-    // Ensure the base directory exists
     tokio::fs::create_dir_all(&local_base)
         .await
         .map_err(|e| AppError::FileSystem {
@@ -226,88 +286,101 @@ pub async fn download_folder(
             path: local_path.clone(),
         })?;
 
-    // Recursively list all files and create directories
-    let files =
-        list_folder_recursive(&client, &token, &drive_id, &item_id, &local_base).await?;
+    let files = list_folder_recursive(&client, &token, &drive_id, &item_id, &local_base).await?;
 
-    // Enqueue download tasks for each file
-    let mut task_ids = Vec::new();
-    let mut engine = download_engine.lock().await;
-
-    for (file_name, file_item_id, file_size, file_path) in files {
-        // Get download URL for each file
-        let download_url =
-            fetch_download_url(&client, &token, &drive_id, &file_item_id).await?;
-
-        let task_id = engine
-            .create_task(DownloadParams {
+    let params = files
+        .into_iter()
+        .map(|(file_name, file_item_id, file_size, file_path)| {
+            let download_url = format!(
+                "{}/drives/{}/items/{}/content",
+                client.base_url(),
+                drive_id,
+                file_item_id
+            );
+            DownloadParams {
                 file_name,
+                home_account_id: home_account_id.clone(),
+                cloud_env: cloud_env.clone(),
                 drive_id: drive_id.clone(),
                 item_id: file_item_id,
                 local_path: file_path,
                 total_bytes: file_size,
                 download_url,
-            })
-            .await?;
+                bearer_token: Some(token.clone()),
+            }
+        })
+        .collect::<Vec<_>>();
 
-        task_ids.push(task_id);
-    }
-
-    Ok(task_ids)
+    let mut engine = download_engine.lock().await;
+    engine.create_batch(batch_name, params).await
 }
 
-/// Pause an active download task.
+/// Return all persisted download batches for startup restore.
+#[tauri::command]
+pub async fn get_download_tasks(
+    download_engine: State<'_, Mutex<DownloadEngine>>,
+) -> Result<Vec<BatchSnapshot>, AppError> {
+    Ok(download_engine.lock().await.snapshot_batches())
+}
+
+/// Pause a batch download task.
 #[tauri::command]
 pub async fn pause_download(
     task_id: String,
     download_engine: State<'_, Mutex<DownloadEngine>>,
 ) -> Result<(), AppError> {
     let mut engine = download_engine.lock().await;
-    engine.pause_task(&task_id)
+    engine.pause_batch(&task_id).await
 }
 
-/// Resume a paused download task.
-///
-/// If the download URL has expired (>1 hour), fetches a fresh URL from Graph API.
+/// Resume a paused batch download task with a fresh Graph URL.
 #[tauri::command]
 pub async fn resume_download(
     cloud_env: String,
-    drive_id: String,
-    item_id: String,
     task_id: String,
     auth_module: State<'_, Mutex<AuthModule>>,
     download_engine: State<'_, Mutex<DownloadEngine>>,
 ) -> Result<(), AppError> {
-    // Check if we need a fresh URL
-    let needs_refresh = {
+    let env = parse_cloud_env(&cloud_env)?;
+    let home_account_id = {
         let engine = download_engine.lock().await;
-        engine.url_needs_refresh(&task_id).unwrap_or(false)
+        engine.batch_home_account_id(&task_id).ok_or_else(|| {
+            AppError::Transfer {
+                message: "Task not found".to_string(),
+                task_id: task_id.clone(),
+            }
+        })?
     };
-
-    let new_url = if needs_refresh {
-        let env = parse_cloud_env(&cloud_env)?;
-        let token = {
-            let mut auth = auth_module.lock().await;
-            auth.get_token(env.clone()).await?
-        };
-        let client = GraphClient::new(env);
-        Some(fetch_download_url(&client, &token, &drive_id, &item_id).await?)
-    } else {
-        None
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
     };
+    let client = GraphClient::new(env);
+    let base_url = client.base_url().to_string();
 
     let mut engine = download_engine.lock().await;
-    engine.resume_task(&task_id, new_url).await
+    engine.resume_batch(&task_id, &base_url, token).await
 }
 
-/// Cancel a download task. Aborts the transfer and removes partial files.
+/// Cancel a batch download task and remove partial files.
 #[tauri::command]
 pub async fn cancel_download(
     task_id: String,
     download_engine: State<'_, Mutex<DownloadEngine>>,
 ) -> Result<(), AppError> {
     let mut engine = download_engine.lock().await;
-    engine.cancel_task(&task_id)
+    engine.cancel_batch(&task_id)
+}
+
+/// Remove a download batch from the task list. Completed files are kept.
+#[tauri::command]
+pub async fn remove_download(
+    task_id: String,
+    download_engine: State<'_, Mutex<DownloadEngine>>,
+) -> Result<(), AppError> {
+    let mut engine = download_engine.lock().await;
+    engine.remove_batch(&task_id)
 }
 
 /// Open the containing folder of a file in the system file explorer.
@@ -379,7 +452,7 @@ pub async fn upload_files(
     let env = parse_cloud_env(&cloud_env)?;
     let token = {
         let mut auth = auth_module.lock().await;
-        auth.get_token(env.clone()).await?
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
     };
 
     let client = GraphClient::new(env);
@@ -391,13 +464,12 @@ pub async fn upload_files(
     for file_path_str in file_paths {
         let file_path = PathBuf::from(&file_path_str);
 
-        let metadata =
-            tokio::fs::metadata(&file_path)
-                .await
-                .map_err(|e| AppError::FileSystem {
-                    message: format!("Failed to read file metadata: {}", e),
-                    path: file_path_str.clone(),
-                })?;
+        let metadata = tokio::fs::metadata(&file_path)
+            .await
+            .map_err(|e| AppError::FileSystem {
+                message: format!("Failed to read file metadata: {}", e),
+                path: file_path_str.clone(),
+            })?;
 
         let file_name = file_path
             .file_name()
@@ -439,7 +511,7 @@ pub async fn upload_folder(
     let env = parse_cloud_env(&cloud_env)?;
     let token = {
         let mut auth = auth_module.lock().await;
-        auth.get_token(env.clone()).await?
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
     };
 
     let client = GraphClient::new(env);

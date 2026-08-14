@@ -1,13 +1,22 @@
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useTabStore } from "../../stores/tabStore";
+
+interface TabBarProps {
+  /** Open the drive selection flow to create another tab. */
+  onNewTab: () => void;
+  /** Called before switching to a tab (allows exiting the new-tab flow). */
+  onTabSelect?: (tabId: string) => void;
+  /** Called before closing a tab. */
+  onCloseTab?: (tabId: string) => void;
+}
 
 /**
  * Horizontal tab bar for multi-drive file browsing.
  * Each tab shows the drive name and a close button.
  * The active tab is visually highlighted.
  */
-export function TabBar() {
+export function TabBar({ onNewTab, onTabSelect, onCloseTab }: TabBarProps) {
   const { t } = useTranslation();
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
@@ -30,7 +39,10 @@ export function TabBar() {
             role="tab"
             aria-selected={isActive}
             tabIndex={isActive ? 0 : -1}
-            onClick={() => switchTab(tab.id)}
+            onClick={() => {
+              onTabSelect?.(tab.id);
+              switchTab(tab.id);
+            }}
             className={`group flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm cursor-pointer select-none transition-colors ${
               isActive
                 ? "bg-primary text-primary-foreground"
@@ -43,6 +55,7 @@ export function TabBar() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                onCloseTab?.(tab.id);
                 closeTab(tab.id);
               }}
               className={`rounded p-0.5 transition-colors ${
@@ -58,6 +71,14 @@ export function TabBar() {
           </div>
         );
       })}
+      <button
+        onClick={onNewTab}
+        className="ml-1 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        aria-label={t("tabs.newTab")}
+        title={t("tabs.newTab")}
+      >
+        <Plus className="h-4 w-4" />
+      </button>
     </div>
   );
 }

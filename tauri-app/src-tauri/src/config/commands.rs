@@ -21,9 +21,11 @@ pub fn save_config(
     config: AppConfig,
     config_manager: State<'_, ConfigManager>,
 ) -> Result<(), AppError> {
-    config_manager.save_config(&config).map_err(|e| AppError::Config {
-        message: e.to_string(),
-    })
+    config_manager
+        .save_config(&config)
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })
 }
 
 /// Retrieve the list of persisted account entries from disk.

@@ -80,6 +80,24 @@ jobs:
           releaseName: ${{ github.ref_name }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
 
+      - name: Package legacy upgrade zip
+        if: matrix.label == 'windows-x64'
+        shell: pwsh
+        run: |
+          $releaseDir = "tauri-app/src-tauri/target/${{ matrix.target }}/release"
+          $exe = Join-Path $releaseDir "ShareOneList.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Main binary not found: $exe"
+            exit 1
+          }
+          $staging = Join-Path $env:RUNNER_TEMP "shareonelist-upgrade"
+          Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          Copy-Item -Path (Join-Path $releaseDir "*") -Destination $staging -Recurse -Force
+          $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-x64.zip"
+          Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
+          gh release upload "${{ github.ref_name }}" $zip --clobber
+
   publish-release:
     needs: [create-release, build-and-upload]
     runs-on: ubuntu-latest

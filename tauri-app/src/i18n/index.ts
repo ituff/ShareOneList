@@ -50,11 +50,16 @@ i18n.use(initReactI18next).init({
 /**
  * Sync i18n language with the settings store.
  * Call this on app startup after loading settings.
- * If a saved language exists in the store, it overrides the system detection.
+ * If a saved explicit language exists in the store, it overrides the system detection.
+ * "system" always resolves to the OS/browser locale.
  */
 export function syncLanguageFromStore(savedLanguage: string | undefined): void {
-  if (savedLanguage && SUPPORTED_LOCALES.includes(savedLanguage as SupportedLocale)) {
-    i18n.changeLanguage(savedLanguage);
+  if (!savedLanguage || savedLanguage === "system") {
+    i18n.changeLanguage(detectSystemLocale());
+    return;
+  }
+  if (SUPPORTED_LOCALES.includes(savedLanguage as SupportedLocale)) {
+    i18n.changeLanguage(savedLanguage as SupportedLocale);
   }
 }
 
@@ -63,8 +68,8 @@ export function syncLanguageFromStore(savedLanguage: string | undefined): void {
  * This updates i18next immediately (no restart needed) and should be
  * paired with a call to `settingsStore.setLanguage()` to persist.
  */
-export function changeAppLanguage(lang: SupportedLocale): void {
-  i18n.changeLanguage(lang);
+export function changeAppLanguage(lang: SupportedLocale | "system"): void {
+  i18n.changeLanguage(lang === "system" ? detectSystemLocale() : lang);
 }
 
 export default i18n;

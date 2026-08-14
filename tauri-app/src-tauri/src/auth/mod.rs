@@ -8,11 +8,13 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use sha2::{Digest, Sha256};
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 use url::Url;
 
 use crate::auth::cloud_config::{CloudConfig, CloudEnvironment};
 use crate::errors::AppError;
+use crate::models::AccountEntry;
 
 // Default client IDs – these should be overridden from a config file in production.
 // For now they are compile-time constants matching the existing appsettings.json structure.
@@ -36,7 +38,8 @@ pub struct AuthSession {
 /// Manages OAuth2 sessions for all cloud environments.
 #[derive(Debug)]
 pub struct AuthModule {
-    sessions: HashMap<CloudEnvironment, AuthSession>,
+    sessions: HashMap<(CloudEnvironment, String), AuthSession>,
+    drive_to_account: HashMap<(CloudEnvironment, String), String>,
 }
 
 /// Token response from the OAuth2 token endpoint.
@@ -62,11 +65,62 @@ struct IdTokenClaims {
     sub: Option<String>,
 }
 
+/// Binds an ephemeral localhost listener that accepts both IPv4 and IPv6.
+async fn bind_localhost_listener() -> std::io::Result<TcpListener> {
+    if let Ok(socket) = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)) {
+        let dual_stack = socket.set_only_v6(false).is_ok();
+        if dual_stack {
+            let addr: std::net::SocketAddr = (std::net::Ipv6Addr::UNSPECIFIED, 0).into();
+            if socket.bind(&addr.into()).is_ok() && socket.listen(128).is_ok() {
+                let std_listener: std::net::TcpListener = socket.into();
+                return TcpListener::from_std(std_listener);
+            }
+        }
+    }
+
+    TcpListener::bind("127.0.0.1:0").await
+}
+
 impl AuthModule {
     /// Creates a new AuthModule and attempts to restore sessions from the keyring.
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+            drive_to_account: HashMap::new(),
+        }
+    }
+
+    /// Restore saved sessions from the platform keyring on startup.
+    pub async fn restore_sessions(&mut self, accounts: Vec<AccountEntry>) {
+        for account in accounts {
+            let env = account.cloud_type;
+            let key = (env.clone(), account.home_account_id.clone());
+            if self.sessions.contains_key(&key) {
+                continue;
+            }
+            match self
+                .refresh_token_if_needed(&env, &account.home_account_id)
+                .await
+            {
+                Ok(()) => {
+                    if !account.drive_id.is_empty() {
+                        self.drive_to_account.insert(
+                            (env.clone(), account.drive_id.clone()),
+                            account.home_account_id.clone(),
+                        );
+                    }
+                    eprintln!(
+                        "[auth] Restored {} session",
+                        keyring_key(&env, &account.home_account_id)
+                    );
+                }
+                Err(AppError::Auth { message, .. }) if message.contains("No active session") => {}
+                Err(e) => eprintln!(
+                    "[auth] Failed to restore {} session: {}",
+                    keyring_key(&env, &account.home_account_id),
+                    e
+                ),
+            }
         }
     }
 
@@ -96,20 +150,21 @@ impl AuthModule {
         let code_challenge = generate_code_challenge(&code_verifier);
 
         // Bind to a random available port for the redirect URI
-        let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|e| {
-            AppError::Auth {
+        let listener = bind_localhost_listener()
+            .await
+            .map_err(|e| AppError::Auth {
                 message: format!("Failed to bind localhost listener: {}", e),
                 cloud_env: cloud_env.clone(),
-            }
-        })?;
-        let port = listener.local_addr().map_err(|e| {
-            AppError::Auth {
+            })?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| AppError::Auth {
                 message: format!("Failed to get local address: {}", e),
                 cloud_env: cloud_env.clone(),
-            }
-        })?.port();
+            })?
+            .port();
 
-        let redirect_uri = format!("http://localhost:{}/callback", port);
+        let redirect_uri = format!("http://localhost:{}", port);
         let state = uuid::Uuid::new_v4().to_string();
 
         // Build authorization URL
@@ -131,25 +186,20 @@ impl AuthModule {
         })?;
 
         // Wait for the OAuth2 callback
-        let auth_code = wait_for_callback(listener, &state).await.map_err(|e| {
-            AppError::Auth {
+        let auth_code = wait_for_callback(listener, &state)
+            .await
+            .map_err(|e| AppError::Auth {
                 message: e,
                 cloud_env: cloud_env.clone(),
-            }
-        })?;
+            })?;
 
         // Exchange the authorization code for tokens
-        let token_response = exchange_code(
-            &config,
-            &auth_code,
-            &redirect_uri,
-            &code_verifier,
-        )
-        .await
-        .map_err(|e| AppError::Auth {
-            message: e,
-            cloud_env: cloud_env.clone(),
-        })?;
+        let token_response = exchange_code(&config, &auth_code, &redirect_uri, &code_verifier)
+            .await
+            .map_err(|e| AppError::Auth {
+                message: e,
+                cloud_env: cloud_env.clone(),
+            })?;
 
         let expires_at = Utc::now() + Duration::seconds(token_response.expires_in);
 
@@ -169,14 +219,7 @@ impl AuthModule {
             .and_then(|c| c.oid.clone().or_else(|| c.sub.clone()))
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let refresh_token = token_response
-            .refresh_token
-            .unwrap_or_default();
-
-        // Store refresh token in platform keyring
-        if !refresh_token.is_empty() {
-            store_refresh_token(&cloud_env, &refresh_token).ok();
-        }
+        let refresh_token = token_response.refresh_token.unwrap_or_default();
 
         let session = AuthSession {
             cloud_env: cloud_env.clone(),
@@ -184,161 +227,200 @@ impl AuthModule {
             access_token: token_response.access_token,
             refresh_token,
             expires_at,
-            home_account_id,
+            home_account_id: home_account_id.clone(),
             display_name,
         };
 
-        self.sessions.insert(cloud_env, session.clone());
+        self.sessions.insert(
+            (cloud_env.clone(), home_account_id.clone()),
+            session.clone(),
+        );
         Ok(session)
     }
 
-    /// Logs out by clearing tokens from the keyring and removing the session.
-    pub async fn logout(&mut self, cloud_env: CloudEnvironment) -> Result<(), AppError> {
-        // Remove from keyring
-        delete_refresh_token(&cloud_env).ok();
+    /// Registers a completed login under its final account ID and drive ID.
+    pub fn register_session(
+        &mut self,
+        cloud_env: &CloudEnvironment,
+        session: AuthSession,
+        home_account_id: &str,
+        drive_id: &str,
+    ) {
+        let old_key = (cloud_env.clone(), session.home_account_id.clone());
+        self.sessions.remove(&old_key);
 
-        // Remove session
-        self.sessions.remove(&cloud_env);
+        let new_key = (cloud_env.clone(), home_account_id.to_string());
+        self.sessions.insert(new_key.clone(), session);
+
+        if let Some(session) = self.sessions.get(&new_key) {
+            if !session.refresh_token.is_empty() {
+                let _ = store_refresh_token(cloud_env, home_account_id, &session.refresh_token);
+            }
+        }
+
+        if !drive_id.is_empty() {
+            self.drive_to_account.insert(
+                (cloud_env.clone(), drive_id.to_string()),
+                home_account_id.to_string(),
+            );
+        }
+    }
+
+    /// Logs out one account by clearing its keyring token and session.
+    pub async fn logout(
+        &mut self,
+        cloud_env: CloudEnvironment,
+        home_account_id: Option<&str>,
+    ) -> Result<(), AppError> {
+        match home_account_id {
+            Some(id) => {
+                delete_refresh_token(&cloud_env, id).ok();
+                self.drive_to_account.retain(|(env, _), account_id| {
+                    env != &cloud_env || account_id != id
+                });
+                self.sessions
+                    .remove(&(cloud_env.clone(), id.to_string()));
+            }
+            None => {
+                self.sessions.retain(|(env, _), _| env != &cloud_env);
+                self.drive_to_account
+                    .retain(|(env, _), _| env != &cloud_env);
+            }
+        }
         Ok(())
     }
 
-    /// Returns the current access token, refreshing if needed.
-    pub async fn get_token(&mut self, cloud_env: CloudEnvironment) -> Result<String, AppError> {
-        // Try to refresh if needed
-        self.refresh_token_if_needed(&cloud_env).await?;
+    /// Returns the access token for the account that owns a drive.
+    pub async fn get_token_for_drive(
+        &mut self,
+        cloud_env: CloudEnvironment,
+        drive_id: &str,
+    ) -> Result<String, AppError> {
+        let home_account_id = self
+            .drive_to_account
+            .get(&(cloud_env.clone(), drive_id.to_string()))
+            .cloned()
+            .ok_or_else(|| AppError::Auth {
+                message: "No active session for this drive. Please login first.".to_string(),
+                cloud_env: cloud_env.clone(),
+            })?;
+        self.get_token_for_account(cloud_env, &home_account_id).await
+    }
 
-        let session = self.sessions.get(&cloud_env).ok_or_else(|| AppError::Auth {
-            message: "No active session. Please login first.".to_string(),
+    /// Returns the access token for a specific account.
+    pub async fn get_token_for_account(
+        &mut self,
+        cloud_env: CloudEnvironment,
+        home_account_id: &str,
+    ) -> Result<String, AppError> {
+        self.refresh_token_if_needed(&cloud_env, home_account_id)
+            .await?;
+
+        let key = (cloud_env.clone(), home_account_id.to_string());
+        let session = self.sessions.get(&key).ok_or_else(|| AppError::Auth {
+            message: "No active session for this account. Please login first.".to_string(),
             cloud_env: cloud_env.clone(),
         })?;
 
         Ok(session.access_token.clone())
     }
 
+    /// Fallback token lookup for commands without a drive context.
+    pub async fn get_token(&mut self, cloud_env: CloudEnvironment) -> Result<String, AppError> {
+        let home_account_id = self
+            .sessions
+            .keys()
+            .find(|(env, _)| env == &cloud_env)
+            .map(|(_, id)| id.clone())
+            .ok_or_else(|| AppError::Auth {
+                message: "No active session. Please login first.".to_string(),
+                cloud_env: cloud_env.clone(),
+            })?;
+        self.get_token_for_account(cloud_env, &home_account_id)
+            .await
+    }
+
     /// Checks if the access token is about to expire (≤5 min remaining)
-    /// and refreshes it using the refresh token if needed.
+    /// and refreshes it using the account-specific refresh token.
     pub async fn refresh_token_if_needed(
         &mut self,
         cloud_env: &CloudEnvironment,
+        home_account_id: &str,
     ) -> Result<(), AppError> {
-        let needs_refresh = {
-            if let Some(session) = self.sessions.get(cloud_env) {
-                let remaining = session.expires_at - Utc::now();
-                remaining <= Duration::minutes(5)
-            } else {
-                // No session – try to restore from keyring
-                if let Some(refresh_token) = load_refresh_token(cloud_env) {
-                    // We have a stored refresh token, attempt refresh
-                    let config = Self::cloud_config(cloud_env);
-                    match refresh_access_token(&config, &refresh_token).await {
-                        Ok(token_response) => {
-                            let expires_at =
-                                Utc::now() + Duration::seconds(token_response.expires_in);
-                            let new_refresh = token_response
-                                .refresh_token
-                                .unwrap_or_else(|| refresh_token.clone());
+        let key = (cloud_env.clone(), home_account_id.to_string());
+        let needs_refresh = self
+            .sessions
+            .get(&key)
+            .map(|session| session.expires_at - Utc::now() <= Duration::minutes(5))
+            .unwrap_or(true);
 
-                            // Store updated refresh token
-                            if !new_refresh.is_empty() {
-                                store_refresh_token(cloud_env, &new_refresh).ok();
-                            }
-
-                            let claims = token_response
-                                .id_token
-                                .as_deref()
-                                .and_then(decode_id_token_claims);
-
-                            let display_name = claims
-                                .as_ref()
-                                .and_then(|c| {
-                                    c.name.clone().or_else(|| c.preferred_username.clone())
-                                })
-                                .unwrap_or_else(|| "Unknown User".to_string());
-
-                            let home_account_id = claims
-                                .as_ref()
-                                .and_then(|c| c.oid.clone().or_else(|| c.sub.clone()))
-                                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-
-                            let session = AuthSession {
-                                cloud_env: cloud_env.clone(),
-                                client_id: config.client_id.clone(),
-                                access_token: token_response.access_token,
-                                refresh_token: new_refresh,
-                                expires_at,
-                                home_account_id,
-                                display_name,
-                            };
-                            self.sessions.insert(cloud_env.clone(), session);
-                            return Ok(());
-                        }
-                        Err(_) => {
-                            return Err(AppError::Auth {
-                                message: "Token refresh failed. Please re-authenticate.".to_string(),
-                                cloud_env: cloud_env.clone(),
-                            });
-                        }
-                    }
-                } else {
-                    return Err(AppError::Auth {
-                        message: "No active session. Please login first.".to_string(),
-                        cloud_env: cloud_env.clone(),
-                    });
-                }
-            }
-        };
-
-        if needs_refresh {
-            let session = self.sessions.get(cloud_env).unwrap();
-            let config = Self::cloud_config(cloud_env);
-            let refresh_token = session.refresh_token.clone();
-
-            if refresh_token.is_empty() {
-                return Err(AppError::Auth {
-                    message: "No refresh token available. Please re-authenticate.".to_string(),
-                    cloud_env: cloud_env.clone(),
-                });
-            }
-
-            match refresh_access_token(&config, &refresh_token).await {
-                Ok(token_response) => {
-                    let expires_at = Utc::now() + Duration::seconds(token_response.expires_in);
-                    let new_refresh = token_response
-                        .refresh_token
-                        .unwrap_or_else(|| refresh_token.clone());
-
-                    // Update keyring
-                    if !new_refresh.is_empty() {
-                        store_refresh_token(cloud_env, &new_refresh).ok();
-                    }
-
-                    let session = self.sessions.get_mut(cloud_env).unwrap();
-                    session.access_token = token_response.access_token;
-                    session.refresh_token = new_refresh;
-                    session.expires_at = expires_at;
-                }
-                Err(e) => {
-                    // Remove invalid session
-                    self.sessions.remove(cloud_env);
-                    return Err(AppError::Auth {
-                        message: format!("Token refresh failed: {}. Please re-authenticate.", e),
-                        cloud_env: cloud_env.clone(),
-                    });
-                }
-            }
+        if !needs_refresh {
+            return Ok(());
         }
 
-        Ok(())
+        let refresh_token = self
+            .sessions
+            .get(&key)
+            .map(|s| s.refresh_token.clone())
+            .or_else(|| load_refresh_token(cloud_env, home_account_id))
+            .ok_or_else(|| AppError::Auth {
+                message: "No active session for this account. Please login first.".to_string(),
+                cloud_env: cloud_env.clone(),
+            })?;
+
+        let config = Self::cloud_config(cloud_env);
+        match refresh_access_token(&config, &refresh_token).await {
+            Ok(token_response) => {
+                let expires_at = Utc::now() + Duration::seconds(token_response.expires_in);
+                let new_refresh = token_response
+                    .refresh_token
+                    .unwrap_or_else(|| refresh_token.clone());
+
+                if !new_refresh.is_empty() {
+                    if let Err(e) = store_refresh_token(cloud_env, home_account_id, &new_refresh) {
+                        eprintln!("[auth] Failed to store refreshed token: {}", e);
+                    }
+                }
+
+                let session = self.sessions.entry(key).or_insert_with(|| AuthSession {
+                    cloud_env: cloud_env.clone(),
+                    client_id: config.client_id.clone(),
+                    access_token: String::new(),
+                    refresh_token: new_refresh.clone(),
+                    expires_at,
+                    home_account_id: home_account_id.to_string(),
+                    display_name: "Unknown User".to_string(),
+                });
+                session.access_token = token_response.access_token;
+                session.refresh_token = new_refresh;
+                session.expires_at = expires_at;
+                session.client_id = config.client_id.clone();
+                Ok(())
+            }
+            Err(e) => {
+                self.sessions.remove(&key);
+                Err(AppError::Auth {
+                    message: format!("Token expired. Please re-login. ({})", e),
+                    cloud_env: cloud_env.clone(),
+                })
+            }
+        }
     }
 
-    /// Returns true if there is an active session for the given environment.
-    pub fn has_session(&self, cloud_env: &CloudEnvironment) -> bool {
-        self.sessions.contains_key(cloud_env)
+    /// Returns true if there is a session for the given account.
+    pub fn has_session(&self, cloud_env: &CloudEnvironment, home_account_id: &str) -> bool {
+        self.sessions
+            .contains_key(&(cloud_env.clone(), home_account_id.to_string()))
     }
 
-    /// Returns the current session for the given environment, if any.
-    pub fn get_session(&self, cloud_env: &CloudEnvironment) -> Option<&AuthSession> {
-        self.sessions.get(cloud_env)
+    /// Returns the session for the given account, if any.
+    pub fn get_session(
+        &self,
+        cloud_env: &CloudEnvironment,
+        home_account_id: &str,
+    ) -> Option<&AuthSession> {
+        self.sessions
+            .get(&(cloud_env.clone(), home_account_id.to_string()))
     }
 }
 
@@ -382,7 +464,9 @@ async fn wait_for_callback(listener: TcpListener, expected_state: &str) -> Resul
         .map_err(|e| format!("Failed to accept connection: {}", e))?;
 
     let (stream, _) = result;
-    let std_stream = stream.into_std().map_err(|e| format!("Stream conversion failed: {}", e))?;
+    let std_stream = stream
+        .into_std()
+        .map_err(|e| format!("Stream conversion failed: {}", e))?;
 
     // Read the HTTP request
     let mut reader = BufReader::new(std_stream.try_clone().map_err(|e| e.to_string())?);
@@ -392,14 +476,15 @@ async fn wait_for_callback(listener: TcpListener, expected_state: &str) -> Resul
         .map_err(|e| format!("Failed to read request: {}", e))?;
 
     // Parse the request to extract query parameters
-    // Expected format: GET /callback?code=...&state=... HTTP/1.1
+    // Expected format: GET /?code=...&state=... HTTP/1.1
     let path = request_line
         .split_whitespace()
         .nth(1)
         .ok_or_else(|| "Invalid HTTP request".to_string())?;
 
     let full_url = format!("http://localhost{}", path);
-    let parsed = Url::parse(&full_url).map_err(|e| format!("Failed to parse callback URL: {}", e))?;
+    let parsed =
+        Url::parse(&full_url).map_err(|e| format!("Failed to parse callback URL: {}", e))?;
 
     let params: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
 
@@ -491,10 +576,7 @@ async fn exchange_code(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!(
-            "Token endpoint returned {}: {}",
-            status, body
-        ));
+        return Err(format!("Token endpoint returned {}: {}", status, body));
     }
 
     response
@@ -562,17 +644,25 @@ fn decode_id_token_claims(id_token: &str) -> Option<IdTokenClaims> {
 // Keyring helpers (secure token storage)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Keyring key for the refresh token of a given cloud environment.
-fn keyring_key(cloud_env: &CloudEnvironment) -> String {
-    match cloud_env {
-        CloudEnvironment::Global => "refresh_token_global".to_string(),
-        CloudEnvironment::China => "refresh_token_china".to_string(),
-    }
+/// Keyring key for the refresh token of a given account and cloud environment.
+fn keyring_key(cloud_env: &CloudEnvironment, home_account_id: &str) -> String {
+    let env = match cloud_env {
+        CloudEnvironment::Global => "global",
+        CloudEnvironment::China => "china",
+    };
+    format!("refresh_token_{}_{}", home_account_id, env)
 }
 
 /// Stores a refresh token in the platform keyring.
-fn store_refresh_token(cloud_env: &CloudEnvironment, token: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(cloud_env))
+fn store_refresh_token(
+    cloud_env: &CloudEnvironment,
+    home_account_id: &str,
+    token: &str,
+) -> Result<(), String> {
+    let entry = keyring::Entry::new(
+        KEYRING_SERVICE,
+        &keyring_key(cloud_env, home_account_id),
+    )
         .map_err(|e| format!("Keyring entry creation failed: {}", e))?;
     entry
         .set_password(token)
@@ -580,14 +670,18 @@ fn store_refresh_token(cloud_env: &CloudEnvironment, token: &str) -> Result<(), 
 }
 
 /// Loads a refresh token from the platform keyring.
-fn load_refresh_token(cloud_env: &CloudEnvironment) -> Option<String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(cloud_env)).ok()?;
+fn load_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Option<String> {
+    let entry =
+        keyring::Entry::new(KEYRING_SERVICE, &keyring_key(cloud_env, home_account_id)).ok()?;
     entry.get_password().ok()
 }
 
 /// Deletes a refresh token from the platform keyring.
-fn delete_refresh_token(cloud_env: &CloudEnvironment) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &keyring_key(cloud_env))
+fn delete_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(
+        KEYRING_SERVICE,
+        &keyring_key(cloud_env, home_account_id),
+    )
         .map_err(|e| format!("Keyring entry creation failed: {}", e))?;
     entry
         .delete_credential()
@@ -604,13 +698,7 @@ mod urlencoding {
         let mut encoded = String::with_capacity(input.len() * 3);
         for byte in input.bytes() {
             match byte {
-                b'A'..=b'Z'
-                | b'a'..=b'z'
-                | b'0'..=b'9'
-                | b'-'
-                | b'_'
-                | b'.'
-                | b'~' => {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                     encoded.push(byte as char);
                 }
                 _ => {
@@ -639,7 +727,8 @@ mod tests {
     #[test]
     fn test_code_verifier_characters() {
         let verifier = generate_code_verifier();
-        let valid_chars: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+        let valid_chars: &str =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
         for ch in verifier.chars() {
             assert!(
                 valid_chars.contains(ch),
@@ -669,8 +758,14 @@ mod tests {
 
     #[test]
     fn test_keyring_key_naming() {
-        assert_eq!(keyring_key(&CloudEnvironment::Global), "refresh_token_global");
-        assert_eq!(keyring_key(&CloudEnvironment::China), "refresh_token_china");
+        assert_eq!(
+            keyring_key(&CloudEnvironment::Global, "account-1"),
+            "refresh_token_account-1_global"
+        );
+        assert_eq!(
+            keyring_key(&CloudEnvironment::China, "account-2"),
+            "refresh_token_account-2_china"
+        );
     }
 
     #[test]
@@ -687,7 +782,10 @@ mod tests {
         let claims = decode_id_token_claims(&fake_jwt).unwrap();
         assert_eq!(claims.name, Some("Test User".to_string()));
         assert_eq!(claims.oid, Some("12345-67890".to_string()));
-        assert_eq!(claims.preferred_username, Some("test@example.com".to_string()));
+        assert_eq!(
+            claims.preferred_username,
+            Some("test@example.com".to_string())
+        );
     }
 
     #[test]
@@ -700,8 +798,8 @@ mod tests {
     #[test]
     fn test_auth_module_new() {
         let module = AuthModule::new();
-        assert!(!module.has_session(&CloudEnvironment::Global));
-        assert!(!module.has_session(&CloudEnvironment::China));
+        assert!(!module.has_session(&CloudEnvironment::Global, "account-1"));
+        assert!(!module.has_session(&CloudEnvironment::China, "account-2"));
     }
 
     #[test]
@@ -716,11 +814,17 @@ mod tests {
     #[test]
     fn test_cloud_config_endpoints() {
         let global_config = AuthModule::cloud_config(&CloudEnvironment::Global);
-        assert!(global_config.authority.contains("login.microsoftonline.com"));
+        assert!(global_config
+            .authority
+            .contains("login.microsoftonline.com"));
         assert!(global_config.graph_base_url.contains("graph.microsoft.com"));
 
         let china_config = AuthModule::cloud_config(&CloudEnvironment::China);
-        assert!(china_config.authority.contains("login.partner.microsoftonline.cn"));
-        assert!(china_config.graph_base_url.contains("microsoftgraph.chinacloudapi.cn"));
+        assert!(china_config
+            .authority
+            .contains("login.partner.microsoftonline.cn"));
+        assert!(china_config
+            .graph_base_url
+            .contains("microsoftgraph.chinacloudapi.cn"));
     }
 }

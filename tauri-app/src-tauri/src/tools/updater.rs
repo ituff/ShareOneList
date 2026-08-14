@@ -46,29 +46,62 @@ fn is_newer(remote: &str, local: &str) -> bool {
     false
 }
 
-/// Determine the platform-specific asset name fragment to match.
-fn platform_asset_filter() -> &'static str {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+/// Asset preferences for the current platform, in order of priority.
+/// The first matching asset is used, so installers win over portable zips.
+fn platform_asset_preferences() -> Vec<&'static str> {
+    #[cfg(target_os = "windows")]
     {
-        "x64"
+        vec![
+            ".msi",
+            ".exe",
+            ".zip",
+            #[cfg(target_arch = "aarch64")]
+            "arm64",
+            #[cfg(target_arch = "x86_64")]
+            "x64",
+        ]
     }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+    #[cfg(target_os = "macos")]
     {
-        "arm64"
+        vec![
+            ".dmg",
+            ".app",
+            ".zip",
+            "macos",
+            #[cfg(target_arch = "aarch64")]
+            "aarch64",
+        ]
     }
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        "macos"
+        vec!["x64", "amd64"]
     }
-    // Fallback for other platforms (linux x86_64, etc.)
-    #[cfg(not(any(
-        all(target_os = "windows", target_arch = "x86_64"),
-        all(target_os = "windows", target_arch = "aarch64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-    )))]
-    {
-        "x64"
+}
+
+/// Pick the release asset best suited for this platform.
+fn select_platform_asset<'a>(assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+    select_platform_asset_with_preferences(assets, &platform_asset_preferences())
+}
+
+fn select_platform_asset_with_preferences<'a>(
+    assets: &'a [GitHubAsset],
+    preferences: &[&str],
+) -> Option<&'a GitHubAsset> {
+    let lower_names: Vec<String> = assets
+        .iter()
+        .map(|a| a.name.to_lowercase())
+        .collect();
+
+    for preference in preferences {
+        if let Some(index) = lower_names
+            .iter()
+            .position(|name| name.contains(preference))
+        {
+            return assets.get(index);
+        }
     }
+
+    None
 }
 
 /// Check GitHub releases for a newer version.
@@ -94,11 +127,10 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
         });
     }
 
-    let release: GitHubRelease =
-        response.json().await.map_err(|e| AppError::Network {
-            message: format!("Failed to parse release data: {}", e),
-            retryable: true,
-        })?;
+    let release: GitHubRelease = response.json().await.map_err(|e| AppError::Network {
+        message: format!("Failed to parse release data: {}", e),
+        retryable: true,
+    })?;
 
     let remote_version = release.tag_name.trim_start_matches('v').to_string();
 
@@ -107,11 +139,7 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
     }
 
     // Find platform-specific download URL
-    let filter = platform_asset_filter();
-    let download_url = release
-        .assets
-        .iter()
-        .find(|a| a.name.to_lowercase().contains(filter))
+    let download_url = select_platform_asset(&release.assets)
         .map(|a| a.browser_download_url.clone())
         .unwrap_or_default();
 
@@ -145,11 +173,10 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
         });
     }
 
-    let release: GitHubRelease =
-        response.json().await.map_err(|e| AppError::Network {
-            message: format!("Failed to parse release data: {}", e),
-            retryable: true,
-        })?;
+    let release: GitHubRelease = response.json().await.map_err(|e| AppError::Network {
+        message: format!("Failed to parse release data: {}", e),
+        retryable: true,
+    })?;
 
     let release_version = release.tag_name.trim_start_matches('v');
     if release_version != version.trim_start_matches('v') {
@@ -162,15 +189,10 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
         });
     }
 
-    let filter = platform_asset_filter();
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name.to_lowercase().contains(filter))
-        .ok_or_else(|| AppError::Network {
-            message: "No matching asset found for this platform".to_string(),
-            retryable: false,
-        })?;
+    let asset = select_platform_asset(&release.assets).ok_or_else(|| AppError::Network {
+        message: "No matching asset found for this platform".to_string(),
+        retryable: false,
+    })?;
 
     // Download the asset to a temp file
     let download_response = client
@@ -185,18 +207,18 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
 
     if !download_response.status().is_success() {
         return Err(AppError::Network {
-            message: format!(
-                "Download returned status {}",
-                download_response.status()
-            ),
+            message: format!("Download returned status {}", download_response.status()),
             retryable: true,
         });
     }
 
-    let bytes = download_response.bytes().await.map_err(|e| AppError::Network {
-        message: format!("Failed to read download: {}", e),
-        retryable: true,
-    })?;
+    let bytes = download_response
+        .bytes()
+        .await
+        .map_err(|e| AppError::Network {
+            message: format!("Failed to read download: {}", e),
+            retryable: true,
+        })?;
 
     // Save to temp directory
     let temp_dir = std::env::temp_dir();
@@ -219,6 +241,35 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn asset(name: &str) -> GitHubAsset {
+        GitHubAsset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.com/{}", name),
+        }
+    }
+
+    #[test]
+    fn test_select_windows_installer_over_zip() {
+        let assets = vec![
+            asset("ShareOneList-v2.0.0-x64.zip"),
+            asset("ShareOneList_2.0.0_x64-setup.exe"),
+        ];
+        let selected = select_platform_asset_with_preferences(&assets, &[".msi", ".exe", ".zip"])
+            .expect("asset should be selected");
+        assert!(selected.name.ends_with(".exe"));
+    }
+
+    #[test]
+    fn test_select_macos_dmg_over_zip() {
+        let assets = vec![
+            asset("ShareOneList_2.0.0_aarch64.dmg"),
+            asset("ShareOneList-v2.0.0-macos.zip"),
+        ];
+        let selected = select_platform_asset_with_preferences(&assets, &[".dmg", ".app", ".zip"])
+            .expect("asset should be selected");
+        assert!(selected.name.ends_with(".dmg"));
+    }
 
     #[test]
     fn test_is_newer() {

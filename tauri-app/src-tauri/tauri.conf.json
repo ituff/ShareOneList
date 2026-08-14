@@ -1,5 +1,6 @@
 {
   "productName": "ShareOneList",
+  "mainBinaryName": "ShareOneList",
   "version": "2.0.0",
   "identifier": "com.shareonelist.app",
   "build": {
