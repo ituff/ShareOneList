@@ -16,6 +16,54 @@ import type { CloudEnvironment, DriveItem } from "../../lib/types";
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp"];
 const DOC_EXTENSIONS = [".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".pdf"];
+const VIDEO_EXTENSIONS = [
+  ".mp4",
+  ".mkv",
+  ".avi",
+  ".mov",
+  ".wmv",
+  ".webm",
+  ".m4v",
+  ".3gp",
+  ".flv",
+];
+const TEXT_EXTENSIONS = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".log",
+  ".ini",
+  ".cfg",
+  ".conf",
+  ".csv",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".py",
+  ".rs",
+  ".java",
+  ".c",
+  ".cpp",
+  ".h",
+  ".hpp",
+  ".cs",
+  ".go",
+  ".rb",
+  ".php",
+  ".html",
+  ".css",
+  ".scss",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".sh",
+  ".sql",
+  ".kt",
+  ".swift",
+];
 
 /** Check if a DriveItem is previewable (image or document). */
 export function isPreviewable(item: DriveItem): boolean {
@@ -23,7 +71,9 @@ export function isPreviewable(item: DriveItem): boolean {
   const name = item.name.toLowerCase();
   return (
     IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext)) ||
-    DOC_EXTENSIONS.some((ext) => name.endsWith(ext))
+    DOC_EXTENSIONS.some((ext) => name.endsWith(ext)) ||
+    VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext)) ||
+    TEXT_EXTENSIONS.some((ext) => name.endsWith(ext))
   );
 }
 
@@ -31,6 +81,24 @@ export function isPreviewable(item: DriveItem): boolean {
 export function isImageFile(item: DriveItem): boolean {
   const name = item.name.toLowerCase();
   return IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/** Check if a DriveItem is a video file. */
+export function isVideoFile(item: DriveItem): boolean {
+  const name = item.name.toLowerCase();
+  return VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/** Check if a DriveItem is a text/Markdown/code file. */
+export function isTextFile(item: DriveItem): boolean {
+  const name = item.name.toLowerCase();
+  return TEXT_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/** Check if a DriveItem is a Markdown file. */
+export function isMarkdownFile(item: DriveItem): boolean {
+  const name = item.name.toLowerCase();
+  return name.endsWith(".md") || name.endsWith(".markdown");
 }
 
 // ─── Props ──────────────────────────────────────────────────────────────────
@@ -52,14 +120,12 @@ interface FilePreviewProps {
 export function FilePreview({
   item,
   driveId,
-  cloudEnv: _cloudEnv,
+  cloudEnv,
   previewableItems,
   currentIndex,
   onClose,
   onNavigate,
 }: FilePreviewProps) {
-  // _cloudEnv reserved for future environment-specific preview logic
-  void _cloudEnv;
   const { t } = useTranslation();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -84,7 +150,7 @@ export function FilePreview({
     // For documents or images without downloadUrl, fetch preview URL from backend
     setIsLoading(true);
     try {
-      const url = await getPreviewUrl(driveId, item.id);
+      const url = await getPreviewUrl(driveId, item.id, cloudEnv);
       setPreviewUrl(url);
     } catch (err) {
       const message = err instanceof Error ? err.message : t("errors.unknownError");
@@ -92,7 +158,7 @@ export function FilePreview({
     } finally {
       setIsLoading(false);
     }
-  }, [item, driveId, isImage, t]);
+  }, [item, driveId, cloudEnv, isImage, t]);
 
   useEffect(() => {
     setPreviewUrl(null);

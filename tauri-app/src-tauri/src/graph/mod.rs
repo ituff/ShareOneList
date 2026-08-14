@@ -77,7 +77,11 @@ impl GraphClient {
     /// - Successful responses (returned immediately)
     ///
     /// Uses exponential backoff: 1s, 2s, 4s (capped at 3 attempts, max delay 30s).
-    pub async fn request_with_retry<F>(&self, token: &str, build_request: F) -> Result<Response, AppError>
+    pub async fn request_with_retry<F>(
+        &self,
+        token: &str,
+        build_request: F,
+    ) -> Result<Response, AppError>
     where
         F: Fn(&Client, &str) -> RequestBuilder,
     {

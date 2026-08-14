@@ -148,7 +148,7 @@ impl UploadEngine {
             // Emit final status
             let (status, error) = match &result {
                 Ok(()) => ("completed".to_string(), None),
-                Err(e) => (format!("failed: {}", e), Some(e.clone())),
+                Err(e) => ("failed".to_string(), Some(e.clone())),
             };
 
             let _ = app_handle.emit(
@@ -162,6 +162,7 @@ impl UploadEngine {
                     speed_bps: 0,
                     elapsed_secs: 0.0,
                     error,
+                    local_path: None,
                 },
             );
         });
@@ -171,10 +172,13 @@ impl UploadEngine {
 
     /// Cancel an active upload task.
     pub fn cancel_task(&mut self, task_id: &str) -> Result<(), AppError> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| AppError::Transfer {
-            message: "Task not found".to_string(),
-            task_id: task_id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| AppError::Transfer {
+                message: "Task not found".to_string(),
+                task_id: task_id.to_string(),
+            })?;
 
         task.cancel_token.cancel();
         task.status = UploadStatus::Cancelled;
@@ -253,6 +257,7 @@ async fn run_upload(
                     speed_bps: speed,
                     elapsed_secs: elapsed,
                     error: None,
+                    local_path: None,
                 },
             );
 
@@ -452,10 +457,8 @@ async fn session_upload(
                         break;
                     } else {
                         let body = response.text().await.unwrap_or_default();
-                        last_error = format!(
-                            "Chunk upload failed with status {}: {}",
-                            status_code, body
-                        );
+                        last_error =
+                            format!("Chunk upload failed with status {}: {}", status_code, body);
                     }
                 }
                 Err(e) => {
@@ -522,15 +525,16 @@ pub async fn upload_folder_recursive(
                 path: local_folder_path.to_string_lossy().to_string(),
             })?;
 
-    while let Some(entry) = read_dir.next_entry().await.map_err(|e| AppError::FileSystem {
-        message: format!("Failed to read directory entry: {}", e),
-        path: local_folder_path.to_string_lossy().to_string(),
-    })? {
+    while let Some(entry) = read_dir
+        .next_entry()
+        .await
+        .map_err(|e| AppError::FileSystem {
+            message: format!("Failed to read directory entry: {}", e),
+            path: local_folder_path.to_string_lossy().to_string(),
+        })?
+    {
         let entry_path = entry.path();
-        let file_name = entry
-            .file_name()
-            .to_string_lossy()
-            .to_string();
+        let file_name = entry.file_name().to_string_lossy().to_string();
 
         let file_type = entry.file_type().await.map_err(|e| AppError::FileSystem {
             message: format!("Failed to get file type: {}", e),
@@ -566,10 +570,7 @@ pub async fn upload_folder_recursive(
                 let status_code = response.status().as_u16();
                 let error_body = response.text().await.unwrap_or_default();
                 return Err(AppError::GraphApi {
-                    message: format!(
-                        "Failed to create folder '{}': {}",
-                        file_name, error_body
-                    ),
+                    message: format!("Failed to create folder '{}': {}", file_name, error_body),
                     status_code,
                 });
             }

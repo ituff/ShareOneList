@@ -2,11 +2,14 @@ import { useTranslation } from "react-i18next";
 import { Pause, Play, X, FolderOpen, Trash2 } from "lucide-react";
 import { useTaskStore, type TaskEntry } from "../../stores/taskStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useAuthStore } from "../../stores/authStore";
 import { formatFileSize } from "../../lib/formatters";
+import { getErrorMessage, isAuthError } from "../../lib/errors";
 import {
   pauseDownload,
   resumeDownload,
   cancelDownload,
+  removeDownloadTask,
   cancelUpload,
   openContainingFolder,
 } from "../../lib/tauri";
@@ -95,15 +98,26 @@ export function TaskItem({ task }: TaskItemProps) {
     try {
       await pauseDownload(task.taskId);
     } catch (err) {
-      addToast("error", String(err));
+      addToast("error", getErrorMessage(err));
     }
   };
 
   const handleResume = async () => {
+    if (!task.cloudEnv) {
+      addToast("error", t("errors.unknownError"));
+      return;
+    }
     try {
-      await resumeDownload(task.taskId);
+      await resumeDownload(task.cloudEnv, task.taskId);
     } catch (err) {
-      addToast("error", String(err));
+      if (isAuthError(err)) {
+        useAuthStore.getState().setPendingRelogin({
+          cloudEnv: task.cloudEnv,
+          taskId: task.taskId,
+        });
+        return;
+      }
+      addToast("error", getErrorMessage(err));
     }
   };
 
@@ -126,16 +140,23 @@ export function TaskItem({ task }: TaskItemProps) {
   };
 
   const handleOpenFolder = async () => {
-    // The backend tracks localPath internally for completed downloads.
-    // We call openContainingFolder with the taskId — the backend resolves the path.
+    if (!task.localPath) {
+      addToast("error", t("errors.unknownError"));
+      return;
+    }
     try {
-      await openContainingFolder(task.taskId);
+      await openContainingFolder(task.localPath);
     } catch (err) {
-      addToast("error", String(err));
+      addToast("error", getErrorMessage(err));
     }
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
+    try {
+      await removeDownloadTask(task.taskId);
+    } catch {
+      // Task may already be gone on backend
+    }
     removeTask(task.taskId);
   };
 

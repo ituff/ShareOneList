@@ -26,7 +26,7 @@ export function StorageInfo({ driveId, cloudEnv }: StorageInfoProps) {
     async function fetchQuota() {
       setState("loading");
       try {
-        const data = await getDriveQuota(driveId);
+        const data = await getDriveQuota(driveId, cloudEnv);
         if (!cancelled) {
           setQuota(data);
           setState("loaded");

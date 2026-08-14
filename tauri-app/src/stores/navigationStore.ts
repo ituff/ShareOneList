@@ -3,6 +3,7 @@ import { create } from "zustand";
 export type NavigationSection =
   | "home"
   | "files"
+  | "bookmarks"
   | "tasks"
   | "tools"
   | "settings";

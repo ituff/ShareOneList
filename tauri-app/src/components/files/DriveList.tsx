@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Database, RefreshCw, AlertCircle } from "lucide-react";
 import { getSiteDrives, getSharedDrives } from "../../lib/tauri";
+import { getErrorMessage } from "../../lib/errors";
 import type { CloudEnvironment, Drive } from "../../lib/types";
 
 interface DriveListProps {
@@ -9,6 +10,7 @@ interface DriveListProps {
   siteId?: string;
   siteName?: string;
   cloudEnv: CloudEnvironment;
+  homeAccountId: string;
   onDriveSelect: (driveId: string, driveName: string, cloudEnv: CloudEnvironment) => void;
   onBack: () => void;
 }
@@ -31,6 +33,7 @@ export function DriveList({
   siteId,
   siteName,
   cloudEnv,
+  homeAccountId,
   onDriveSelect,
   onBack,
 }: DriveListProps) {
@@ -44,15 +47,14 @@ export function DriveList({
     setError(null);
     try {
       if (mode === "sharepoint" && siteId) {
-        const result = await getSiteDrives(siteId);
+        const result = await getSiteDrives(siteId, cloudEnv, homeAccountId);
         setDrives(result);
       } else if (mode === "shared") {
-        const result = await getSharedDrives();
+        const result = await getSharedDrives(cloudEnv, homeAccountId);
         setDrives(result);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+      setError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -60,7 +62,7 @@ export function DriveList({
 
   useEffect(() => {
     fetchDrives();
-  }, [mode, siteId]);
+  }, [mode, siteId, homeAccountId]);
 
   const title =
     mode === "sharepoint" && siteName

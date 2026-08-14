@@ -27,7 +27,7 @@ export function canConvertToPdf(fileName: string): boolean {
  * Modal dialog for converting a Word/Excel/PowerPoint document to PDF.
  * Prompts the user for a save filename, then invokes the backend conversion command.
  */
-export function ConvertDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }: ConvertDialogProps) {
+export function ConvertDialog({ item, driveId, cloudEnv, onClose }: ConvertDialogProps) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,7 +76,7 @@ export function ConvertDialog({ item, driveId, cloudEnv: _cloudEnv, onClose }: C
         // The backend will save to a default downloads location
       }
 
-      await convertFormat(driveId, item.id, "pdf", finalPath);
+      await convertFormat(cloudEnv, driveId, item.id, "pdf", finalPath);
       addToast("success", t("dialogs.convert.success"));
       onClose();
     } catch (err) {
