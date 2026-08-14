@@ -4,39 +4,37 @@ inclusion: always
 
 # 项目概述
 
-SimpleList 是一个基于 WinUI 3 的 OneDrive / SharePoint 文件管理客户端，fork 自 [aiguoli/SimpleList](https://github.com/aiguoli/SimpleList)，在原项目基础上增加了世纪互联（21Vianet）版 Microsoft 365 的支持。
+ShareOneList（仓库名 SimpleList21V）是 Microsoft 365 的跨平台 OneDrive / SharePoint 文件管理客户端，基于 Tauri 2 构建，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），同时支持国际版和世纪互联（21Vianet）版 Microsoft 365。
 
 - **仓库地址：** https://github.com/ituff/SimpleList21V
-- **框架：** WinUI 3 (Windows App SDK)，.NET 9，C#
-- **MVVM 框架：** CommunityToolkit.Mvvm（使用 `[ObservableProperty]`、`[RelayCommand]` 等源生成器）
-- **Graph SDK：** Microsoft.Graph v5（Kiota 风格 API）
-- **认证：** MSAL（Microsoft.Identity.Client），公共客户端应用
+- **框架：** Tauri 2.x，Rust 后端 + React 18 / TypeScript 前端
+- **Graph API：** Rust `reqwest` 直连 Microsoft Graph REST API，不使用 Graph SDK
+- **认证：** OAuth2 authorization code + PKCE，refresh token 存平台安全存储（keyring）
+- **状态管理：** Zustand；**样式：** Tailwind CSS；**i18n：** react-i18next
 
 # 架构
 
 ```
-SimpleList/
-├── Models/          # 数据模型（CloudType、DTO、FileType 等）
-├── Services/        # OneDrive/Graph API 服务层
-│   ├── OneDrive.cs          # Graph API 调用（文件操作、SharePoint、认证）
-│   └── OneDriveServiceBase.cs  # 基类（错误处理、参数校验）
-├── ViewModels/      # MVVM ViewModel 层
-├── Views/           # ContentDialog 和子视图
-├── Pages/           # 页面（导航目标）
-│   ├── CloudPage        # 账户列表页
-│   ├── DriveHubPage     # 服务选择页（OneDrive / SharePoint / 共享）
-│   ├── DrivePage        # 文件浏览页
-│   └── ...
-├── Helpers/         # 工具类（配置、资源、主题）
-├── Converters/      # XAML 值转换器
-├── Controls/        # 自定义控件
-├── Strings/         # 多语言资源（en-US、zh-CN）
-└── Assets/          # 图标和图片
+tauri-app/
+├── src/                     # React 前端
+│   ├── components/          # 页面和组件
+│   ├── stores/              # Zustand 状态
+│   ├── hooks/               # 主题、窗口状态、快捷键
+│   ├── i18n/                # en-US / zh-CN
+│   └── lib/                 # 类型、tauri invoke 封装、工具
+└── src-tauri/src/           # Rust 后端
+    ├── auth/                # OAuth2、会话、token 刷新
+    ├── graph/               # Graph API 调用与校验
+    ├── transfer/            # 下载 / 上传引擎（断点续传）
+    ├── config/              # 配置持久化与旧版迁移
+    └── tools/               # URL 解析、外部分发器、更新器
+
+SimpleList/                  # 旧版 WinUI 3 实现，仅作参考，不继续开发
 ```
 
 # 双云架构
 
-项目同时支持国际版和世纪互联版，核心差异集中在 `Models/CloudType.cs`：
+项目同时支持国际版和世纪互联版，核心差异集中在 `tauri-app/src-tauri/src/auth/cloud_config.rs`：
 
 | 配置项 | 国际版 (Global) | 世纪互联版 (China) |
 |--------|----------------|-------------------|
@@ -44,7 +42,7 @@ SimpleList/
 | Graph API | graph.microsoft.com/v1.0 | microsoftgraph.chinacloudapi.cn/v1.0 |
 | SharePoint 域名 | sharepoint.com | sharepoint.cn |
 | Scopes | 简写形式 (User.Read) | 完整 URI 前缀 |
-| ClientId | appsettings.json → AzureAD.Global.ClientId | appsettings.json → AzureAD.China.ClientId |
+| ClientId | 内置 Global ClientId | 内置 China ClientId |
 
 两个版本的 Azure AD 完全独立，需要分别在 portal.azure.com 和 portal.azure.cn 注册应用。
 
@@ -59,33 +57,29 @@ SimpleList/
 
 # 导航流程
 
-```
-CloudPage（账户列表）
-  └─ 双击账户 → DriveHubPage（服务选择）
-       ├─ OneDrive → DrivePage（文件浏览）
-       ├─ SharePoint → 站点列表 → 文档库列表 → DrivePage
-       └─ 与我共享 → 文档库列表 → DrivePage
-```
+文件页（账户列表）
+  └─ 双击账户 → 服务选择（OneDrive / SharePoint / 与我共享）
+       ├─ OneDrive → 文件浏览 Tab
+       ├─ SharePoint → 站点列表 → 文档库列表 → 文件浏览 Tab
+       └─ 与我共享 → 文档库列表 → 文件浏览 Tab
 
 # 构建与运行
 
 ```bash
-# 构建
-dotnet build SimpleList/SimpleList.csproj
-
-# 运行
-dotnet run --project SimpleList/SimpleList.csproj
-# 或直接运行 exe
-SimpleList\bin\x64\Debug\net9.0-windows10.0.19041.0\win-x64\SimpleList.exe
+cd tauri-app
+npm install
+npm run tauri dev      # 开发模式
+npm run build          # TypeScript 检查 + Vite 构建
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 # 多语言
 
-所有用户可见的文本必须使用 `x:Uid` 绑定到 `Strings/{locale}/Resources.resw`，不允许在 XAML 或代码中硬编码用户可见文本。当前支持 en-US 和 zh-CN。
+所有用户可见文本走 `src/i18n/` 下的 en-US 和 zh-CN 资源，默认跟随系统语言，可在设置中手动切换。修改文案时必须同步更新两个语言文件。
 
 # 编码规范
 
-- 遵循项目现有的代码风格和命名约定
-- ViewModel 使用 CommunityToolkit.Mvvm 源生成器
-- Graph API 调用统一通过 `OneDrive` 服务类，使用 `ExecuteAsync` 包装以获得统一的错误处理
-- 新增功能需要同时更新中英文资源文件
+- Rust 后端拥有敏感逻辑与业务逻辑，前端通过 `src/lib/tauri.ts` 的类型化封装调用 IPC
+- 文件 / 文件夹类型严格依据 Graph API 返回值（`folder` / `file` facet）判断，不依赖名称猜测
+- 下载 / 上传进度通过 Tauri event 推送，前端订阅后更新 UI
+- 修改 UI 文案必须同步更新 `en-US.json` 和 `zh-CN.json`
