@@ -115,8 +115,8 @@
     "about": "关于",
     "aboutDescription": "OneDrive 与 SharePoint，国际版与世纪互联——一个应用，连接所有云",
     "version": "版本",
-    "credits": "基于 aiguoli 的 SimpleList 项目",
-    "creditsDescription": "感谢原作者的开源贡献",
+    "credits": "ShareOneList Contributors",
+    "creditsDescription": "基于 Tauri 构建的跨平台 OneDrive 与 SharePoint 文件管理器",
     "checkUpdate": "检查更新",
     "downloadUpdate": "下载",
     "upToDate": "已经是最新版本。"
