@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::Deserialize;
 
 const GITHUB_RELEASES_URL: &str =
-    "https://api.github.com/repos/ituff/SimpleList21V/releases/latest";
+    "https://api.github.com/repos/ituff/ShareOneList/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Deserialize)]

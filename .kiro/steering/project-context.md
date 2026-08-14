@@ -4,9 +4,9 @@ inclusion: always
 
 # 项目概述
 
-ShareOneList（仓库名 SimpleList21V）是 Microsoft 365 的跨平台 OneDrive / SharePoint 文件管理客户端，基于 Tauri 2 构建，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），同时支持国际版和世纪互联（21Vianet）版 Microsoft 365。
+ShareOneList（仓库名 ShareOneList）是 Microsoft 365 的跨平台 OneDrive / SharePoint 文件管理客户端，基于 Tauri 2 构建，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），同时支持国际版和世纪互联（21Vianet）版 Microsoft 365。
 
-- **仓库地址：** https://github.com/ituff/SimpleList21V
+- **仓库地址：** https://github.com/ituff/ShareOneList
 - **框架：** Tauri 2.x，Rust 后端 + React 18 / TypeScript 前端
 - **Graph API：** Rust `reqwest` 直连 Microsoft Graph REST API，不使用 Graph SDK
 - **认证：** OAuth2 authorization code + PKCE，refresh token 存平台安全存储（keyring）
@@ -29,7 +29,6 @@ tauri-app/
     ├── config/              # 配置持久化与旧版迁移
     └── tools/               # URL 解析、外部分发器、更新器
 
-SimpleList/                  # 旧版 WinUI 3 实现，仅作参考，不继续开发
 ```
 
 # 双云架构

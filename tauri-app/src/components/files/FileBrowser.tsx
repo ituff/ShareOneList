@@ -509,7 +509,7 @@ export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName
     t,
   ]);
 
-  // Keyboard shortcuts matching the original WinUI experience.
+  // Keyboard shortcuts for common file browser actions.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (dialog) return;

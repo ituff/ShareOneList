@@ -1,17 +1,12 @@
 # AGENTS.md
 
-本文件从 Kiro steering 和 Tauri 重写 spec 整理而来，用于快速接手 ShareOneList / SimpleList21V。Kiro 会自动加载仓库根目录的 `AGENTS.md`，因此它必须始终保持与 `.kiro/steering/`、`.kiro/specs/` 以及实际代码一致。
+本文件从 Kiro steering 和 Tauri 重写 spec 整理而来，用于快速接手 ShareOneList。Kiro 会自动加载仓库根目录的 `AGENTS.md`，因此它必须始终保持与 `.kiro/steering/`、`.kiro/specs/` 以及实际代码一致。
 
 ## 项目定位
 
 ShareOneList 是 Microsoft 365 的跨平台 OneDrive / SharePoint 文件管理客户端，基于 Tauri 2 构建，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），同时支持国际版和世纪互联（21Vianet）版。
 
-仓库同时存在两条产品线：
-
-- `SimpleList/`：旧版 WinUI 3 桌面应用，.NET 9 / C#，仍可用于参考既有行为。
-- `tauri-app/`：当前的 Tauri 2 跨平台重写，Rust 后端 + React/TypeScript 前端，是后续开发的主路径。
-
-除非任务明确指定旧版 WinUI 或迁移需求，否则默认在 `tauri-app/` 中工作。
+当前仓库只保留 Tauri 2 主路径（`tauri-app/`），旧版 WinUI 3 代码已移除。所有任务默认在 `tauri-app/` 中工作。
 
 ## 权威文档
 
@@ -41,7 +36,6 @@ README 以 Tauri 2 主路径为准；遇到 README 与 spec 不一致时，以 `
 ## 仓库结构
 
 ```text
-SimpleList/                        # 旧版 WinUI 3 实现
 tauri-app/                         # Tauri 2 重写（主路径）
   src/
     components/                    # 页面和组件
@@ -100,23 +94,13 @@ npm run build         # TypeScript 检查 + Vite 构建
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-旧版 WinUI 路径：
-
-```powershell
-dotnet build SimpleList/SimpleList.csproj
-.\build.ps1
-.\run.ps1
-```
-
-`publish.ps1` 会构建、打包并发布 GitHub Release，执行前必须由用户明确确认。
-
 ## 本地敏感信息
 
 服务器地址、用户名、密码等敏感信息只放在仓库根目录的 `AGENTS.local.md` 中，该文件已被 `.gitignore` 忽略，禁止写入本文件。
 
 ## 编码约定
 
-- 所有用户可见文本必须走 i18n：Tauri 前端使用 `src/i18n/` 下的 en-US 和 zh-CN，旧版 WinUI 使用 `Strings/{locale}/Resources.resw`，禁止硬编码。
+- 所有用户可见文本必须走 i18n：使用 `src/i18n/` 下的 en-US 和 zh-CN，禁止硬编码。
 - TypeScript 开启 strict；共享类型放在 `src/lib/types.ts`。
 - 文件名校验：1 到 400 字符，禁止 `\ / : * ? " < > |`。校验逻辑放 `graph/validators.rs` 或 `lib/validators.ts`，不要散落在组件里。
 - 文件列表排序：文件夹在前、文件在后，同组内按名称字母排序。
