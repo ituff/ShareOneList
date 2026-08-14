@@ -21,7 +21,7 @@ ShareOneList 是 Microsoft 365 的跨平台文件管理客户端，支持 Window
 
 ## 使用方法
 
-1. 从 [Releases](https://github.com/ituff/SimpleList21V/releases) 下载最新版本
+1. 从 [Releases](https://github.com/ituff/ShareOneList/releases) 下载最新版本
 2. 安装或运行 `ShareOneList`
 3. 点击左侧菜单栏的 **文件**，然后点击 **添加网盘** 登录你的 Microsoft 账户
 4. 双击网盘进入文件浏览
@@ -73,5 +73,3 @@ cd tauri-app
 npm install
 npm run tauri dev
 ```
-
-旧版 WinUI 3 实现保留在 `SimpleList/` 目录中仅作参考，后续开发以 `tauri-app/` 为准。
