@@ -26,6 +26,23 @@ ShareOneList is a cross-platform file management client for Microsoft 365, suppo
 3. Click **Files** in the sidebar, then **Add drive** to sign in with your Microsoft account
 4. Double-click a drive to browse files
 
+### macOS Gatekeeper
+
+The current macOS builds are unsigned and not notarized, so the first launch may show "app is damaged" or "cannot be opened". Remove the quarantine attribute before opening:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ituff/ShareOneList/main/scripts/fix-macos-gatekeeper.command | bash
+```
+
+Or run it manually after moving the app to `/Applications`:
+
+```bash
+xattr -cr /Applications/ShareOneList.app
+open /Applications/ShareOneList.app
+```
+
+If the command reports insufficient permissions, use `sudo xattr -cr /Applications/ShareOneList.app`. Alternatively, right-click the app and choose **Open** to confirm once. The helper script is available at [scripts/fix-macos-gatekeeper.command](./scripts/fix-macos-gatekeeper.command).
+
 ## Configuration
 
 The app ships with default Azure AD Client IDs for both Global and 21Vianet. If you want to use your own Azure AD applications, register them at [portal.azure.com](https://portal.azure.com) (Global) and [portal.azure.cn](https://portal.azure.cn) (21Vianet) separately and configure the client IDs in the app.
