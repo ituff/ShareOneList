@@ -26,6 +26,23 @@ ShareOneList 是 Microsoft 365 的跨平台文件管理客户端，支持 Window
 3. 点击左侧菜单栏的 **文件**，然后点击 **添加网盘** 登录你的 Microsoft 账户
 4. 双击网盘进入文件浏览
 
+### macOS Gatekeeper 说明
+
+当前 GitHub 构建的 macOS 包未签名、未公证，首次打开可能提示“应用已损坏”或“无法打开”。请先移除隔离属性，再打开应用：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ituff/ShareOneList/main/scripts/fix-macos-gatekeeper.command | bash
+```
+
+也可以把应用拖入 `/Applications` 后手动执行：
+
+```bash
+xattr -cr /Applications/ShareOneList.app
+open /Applications/ShareOneList.app
+```
+
+如果提示权限不足，请使用 `sudo xattr -cr /Applications/ShareOneList.app`。另一种方式是右键点击应用，选择“打开”，在弹窗中确认一次。辅助脚本见 [scripts/fix-macos-gatekeeper.command](./scripts/fix-macos-gatekeeper.command)。
+
 ## 配置
 
 应用内置国际版和世纪互联版的 Azure AD 客户端 ID。如需使用自己的 Azure AD 应用，请在 [portal.azure.com](https://portal.azure.com)（国际版）和 [portal.azure.cn](https://portal.azure.cn)（世纪互联版）分别注册并在应用内配置。
