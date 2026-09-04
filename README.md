@@ -2,15 +2,17 @@
 
 English | [简体中文](./README_zh_CN.md)
 
-> Cross-platform OneDrive & SharePoint file manager for Microsoft 365, built with Tauri 2, Rust and React.
+> Cross-platform Microsoft 365 file manager, built with Tauri 2, Rust and React.
 
-ShareOneList is a cross-platform file management client for Microsoft 365, supporting Windows (x64 / arm64) and macOS (Apple Silicon). It provides unified access to OneDrive and SharePoint document libraries, with full support for both the Global (International) and China (21Vianet) environments.
+ShareOneList is a file management tool focused on Microsoft 365. One app covers **Global (International) organization accounts, Global personal accounts, and China (21Vianet) accounts** on Windows (x64 / arm64) and macOS (Apple Silicon) — browse OneDrive and SharePoint, and easily download and manage **Teams meeting recordings**.
 
 ## Highlights
 
-- **Dual-cloud support** — Manage files on both Global and 21Vianet Microsoft 365 from a single app
+- **Three account types, one app** — Global (International) organizations, Global personal (Microsoft account), and China (21Vianet) are all first-class citizens. Each account type gets the service entries that fit it: OneDrive, SharePoint, and Teams meeting recordings.
+- **Teams meeting recordings** — Discover recordings across your OneDrive, SharePoint sites, and Microsoft Search, play them in the built-in player, and download them in one click. Recordings locked by download policies can still be saved with the built-in streaming extractor (see the [wiki](https://github.com/ituff/ShareOneList/wiki)).
+- **Cross-platform** — Windows (x64 / arm64) and macOS (Apple Silicon) builds from the same codebase
 - **OneDrive + SharePoint** — Browse your personal OneDrive, SharePoint site libraries, and shared drives in one place
-- **Multi-account** — Add multiple accounts across different cloud environments
+- **Multi-account** — Add multiple accounts across cloud environments, with custom aliases and icons
 - **Resumable downloads** — Pause and resume interrupted download tasks after restart
 - **Batch tasks** — Merge a batch download into one task with progress and speed
 - **File preview** — Preview images, videos, Markdown, and Office documents online
@@ -51,14 +53,17 @@ The app ships with default Azure AD Client IDs for both Global and 21Vianet. If 
 
 - [x] OneDrive file browsing
 - [x] SharePoint site & document library browsing
-- [x] Global (International) and 21Vianet (China) support
-- [x] Multi-account management
+- [x] Global (International) organization & personal accounts, and 21Vianet (China) support
+- [x] Teams meeting recordings: aggregate, play, and download (streaming extractor for download-restricted recordings)
+- [x] Multi-account management with custom aliases and icons
 - [x] Batch download merged into one task
 - [x] Resumable download with progress and speed
 - [x] Download to a user-selected save path with last-path memory
 - [x] File sharing & link generation
 - [x] File preview (Image, Video, Markdown, Office Online)
 - [x] Image / video thumbnails
+- [x] Sortable file list (name / size / modified, ascending or descending)
+- [x] Explorer-style breadcrumbs that collapse long paths
 - [x] Bookmarks
 - [x] Rename / Delete / Properties
 - [x] Convert to PDF

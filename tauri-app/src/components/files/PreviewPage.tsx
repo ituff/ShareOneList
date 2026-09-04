@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { AlertCircle, Download, ExternalLink, Loader2, RotateCw, Video } from "lucide-react";
 import { dirname, downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
-import { beginStreamDownload, downloadFile, getPreviewUrl, getTextContent } from "../../lib/tauri";
+import {
+  beginStreamDownload,
+  downloadFile,
+  probeDownloadAllowed,
+  getPreviewUrl,
+  getTextContent,
+} from "../../lib/tauri";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TabState } from "../../lib/types";
@@ -12,7 +18,6 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useToastStore } from "../../stores/toastStore";
 import { getErrorMessage } from "../../lib/errors";
-
 interface PreviewPageProps {
   tab: TabState;
 }
@@ -44,6 +49,7 @@ export function PreviewPage({ tab }: PreviewPageProps) {
   const addToast = useToastStore((s) => s.addToast);
   const lastDownloadPath = useSettingsStore((s) => s.lastDownloadPath);
   const setLastDownloadPath = useSettingsStore((s) => s.setLastDownloadPath);
+  const segmentConcurrency = useSettingsStore((s) => s.segmentDownloadConcurrency);
   const item = tab.previewItem;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -59,6 +65,9 @@ export function PreviewPage({ tab }: PreviewPageProps) {
   const [streamState, setStreamState] = useState<StreamState>("idle");
   const [streamProgress, setStreamProgress] = useState<string>("");
   const [streamErrorDetail, setStreamErrorDetail] = useState<string>("");
+  /** True when tenant policy withholds the downloadUrl: downloads must go
+   * through the stream-capture pipeline instead of the Graph download. */
+  const [downloadBlocked, setDownloadBlocked] = useState(false);
 
   const loadPreview = useCallback(async () => {
     if (!item) return;
@@ -118,6 +127,26 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     setPreviewUrl(null);
     loadPreview();
   }, [loadPreview]);
+
+  // Videos: detect whether downloading is allowed. Probe /content with a
+  // 1-byte range — share-link block-download policies reject that endpoint
+  // with 403 even when the item metadata still lists a downloadUrl.
+  useEffect(() => {
+    let cancelled = false;
+    setDownloadBlocked(false);
+    if (!item || !isVideoFile(item)) return;
+    probeDownloadAllowed(tab.driveId, item.id, tab.cloudEnv)
+      .then((allowed) => {
+        if (!cancelled) setDownloadBlocked(!allowed);
+      })
+      .catch(() => {
+        // Probe failures keep the normal download path; it surfaces its own
+        // errors if the file really is blocked.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, tab.driveId, tab.cloudEnv]);
 
   // ── Stream-capture download (in-webview pipeline) ──────────────────────────
   const handleStreamMessage = useCallback((event: MessageEvent) => {
@@ -181,7 +210,13 @@ export function PreviewPage({ tab }: PreviewPageProps) {
       const channel = await beginStreamDownload(selected);
       channelRef.current = channel;
       iframeRef.current?.contentWindow?.postMessage(
-        { type: "SOL_START", captureId: capturedId, port: channel.port, uploadToken: channel.uploadToken },
+        {
+          type: "SOL_START",
+          captureId: capturedId,
+          port: channel.port,
+          uploadToken: channel.uploadToken,
+          concurrency: segmentConcurrency,
+        },
         "*"
       );
     } catch (err) {
@@ -189,7 +224,7 @@ export function PreviewPage({ tab }: PreviewPageProps) {
       setStreamProgress("");
       addToast("error", getErrorMessage(err));
     }
-  }, [item, capturedId, streamState, lastDownloadPath, setLastDownloadPath, addToast, t]);
+  }, [item, capturedId, streamState, lastDownloadPath, setLastDownloadPath, segmentConcurrency, addToast, t]);
 
   const handleStreamCancel = useCallback(() => {
     if (capturedId) {
@@ -204,6 +239,17 @@ export function PreviewPage({ tab }: PreviewPageProps) {
 
   const handleDownload = useCallback(async () => {
     if (!item || isDownloading) return;
+    // No download permission (tenant policy rejects /content): the download
+    // button routes to the stream-capture pipeline, after telling the user.
+    if (downloadBlocked && isVideoFile(item) && isEmbed) {
+      if (!capturedId) {
+        addToast("info", t("preview.streamNeedCapture"));
+        return;
+      }
+      addToast("info", t("preview.streamNotice"));
+      await handleStreamDownload();
+      return;
+    }
     setIsDownloading(true);
     try {
       const dir = lastDownloadPath ?? (await downloadDir());
@@ -234,7 +280,20 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     } finally {
       setIsDownloading(false);
     }
-  }, [item, isDownloading, lastDownloadPath, setLastDownloadPath, tab.driveId, tab.cloudEnv, addToast]);
+  }, [
+    item,
+    isDownloading,
+    isEmbed,
+    downloadBlocked,
+    capturedId,
+    handleStreamDownload,
+    lastDownloadPath,
+    setLastDownloadPath,
+    tab.driveId,
+    tab.cloudEnv,
+    addToast,
+    t,
+  ]);
 
   if (!item) return null;
 
@@ -252,21 +311,17 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           {item.name}
         </span>
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            onClick={handleStreamDownload}
-            disabled={!streamAvailable || !capturedId || streamState === "downloading"}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={
-              !streamAvailable
-                ? undefined
-                : capturedId
-                  ? t("preview.streamDownload")
-                  : t("preview.streamNeedCapture")
-            }
-            aria-label={t("preview.streamDownload")}
-          >
-            <Video className="h-3.5 w-3.5" />
-          </button>
+          {streamAvailable && (
+            <button
+              onClick={handleStreamDownload}
+              disabled={!capturedId || streamState === "downloading"}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={capturedId ? t("preview.streamDownload") : t("preview.streamNeedCapture")}
+              aria-label={t("preview.streamDownload")}
+            >
+              <Video className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             onClick={handleDownload}
             disabled={isDownloading}
@@ -311,12 +366,17 @@ export function PreviewPage({ tab }: PreviewPageProps) {
                 : t("preview.streamFailed"))}
           </span>
           {streamState === "downloading" && (
-            <button
-              onClick={handleStreamCancel}
-              className="ml-auto shrink-0 rounded-md px-2 py-0.5 hover:bg-accent hover:text-foreground transition-colors"
-            >
-              {t("dialogs.cancel")}
-            </button>
+            <>
+              <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground/80">
+                {t("preview.streamKeepOpen")}
+              </span>
+              <button
+                onClick={handleStreamCancel}
+                className="shrink-0 rounded-md px-2 py-0.5 hover:bg-accent hover:text-foreground transition-colors"
+              >
+                {t("dialogs.cancel")}
+              </button>
+            </>
           )}
         </div>
       )}

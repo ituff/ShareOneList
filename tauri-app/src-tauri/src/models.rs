@@ -56,17 +56,15 @@ pub struct Site {
     pub web_url: String,
 }
 
-/// Where a Teams meeting recording was discovered.
+/// Whether a Teams recording belongs to the signed-in user or was shared with
+/// them (discovered via Microsoft Search).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecordingSource {
-    /// Organizer's OneDrive `Recordings` folder.
-    OneDrive,
-    /// A SharePoint site document library `Recordings` folder (channel meetings).
-    SharePoint,
-    /// Found via Microsoft Search across all content the user can access,
-    /// covering participant-visible recordings on other people's drives.
-    Search,
+    /// In the user's own OneDrive `Recordings` folder.
+    Own,
+    /// Shared with the user, found via Microsoft Search.
+    Shared,
 }
 
 /// A Teams meeting recording aggregated across the user's drives.
@@ -107,6 +105,14 @@ pub struct AppConfig {
     #[serde(default)]
     #[serde(alias = "last_download_path")]
     pub last_download_path: Option<String>,
+    /// Concurrent segment fetches for the recording stream pipeline (1-16).
+    #[serde(default = "default_segment_concurrency")]
+    #[serde(alias = "segment_download_concurrency")]
+    pub segment_download_concurrency: u32,
+}
+
+fn default_segment_concurrency() -> u32 {
+    4
 }
 
 /// Theme mode preference.
@@ -143,6 +149,15 @@ pub enum AccountCategory {
     Organization,
 }
 
+impl std::fmt::Display for AccountCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AccountCategory::Personal => write!(f, "personal"),
+            AccountCategory::Organization => write!(f, "organization"),
+        }
+    }
+}
+
 /// A persisted account entry linking a user to a drive and cloud environment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,6 +173,12 @@ pub struct AccountEntry {
     /// Personal vs organizational identity; `None` for legacy entries and 21Vianet.
     #[serde(default, alias = "account_type")]
     pub account_type: Option<AccountCategory>,
+    /// User-set alias shown instead of the display name; `None` when unset.
+    #[serde(default, alias = "alias")]
+    pub alias: Option<String>,
+    /// Identifier of the user-chosen icon from the built-in icon library.
+    #[serde(default, alias = "icon")]
+    pub icon: Option<String>,
 }
 
 /// Options for creating a share link.
@@ -213,6 +234,7 @@ impl Default for AppConfig {
             language: String::from("system"),
             window: WindowState::default(),
             last_download_path: None,
+            segment_download_concurrency: default_segment_concurrency(),
         }
     }
 }
@@ -244,6 +266,8 @@ mod tests {
         }"#;
         let entry: AccountEntry = serde_json::from_str(legacy).unwrap();
         assert_eq!(entry.account_type, None);
+        assert_eq!(entry.alias, None);
+        assert_eq!(entry.icon, None);
 
         let entry = AccountEntry {
             home_account_id: "user-1".to_string(),
@@ -251,9 +275,13 @@ mod tests {
             cloud_type: CloudEnvironment::Global,
             display_name: "Test User".to_string(),
             account_type: Some(AccountCategory::Personal),
+            alias: Some("My Drive".to_string()),
+            icon: Some("rocket-indigo".to_string()),
         };
         let value: serde_json::Value = serde_json::to_value(&entry).unwrap();
         assert_eq!(value["accountType"], "personal");
+        assert_eq!(value["alias"], "My Drive");
+        assert_eq!(value["icon"], "rocket-indigo");
     }
 
     #[test]
@@ -340,7 +368,7 @@ mod tests {
                 download_url: None,
                 created_date_time: Some("2026-08-20T06:30:00Z".to_string()),
             },
-            source_type: RecordingSource::SharePoint,
+            source_type: RecordingSource::Shared,
             source_name: "Engineering".to_string(),
         };
 
@@ -348,7 +376,7 @@ mod tests {
         assert_eq!(value["driveId"], "drive");
         assert_eq!(value["item"]["isFolder"], false);
         assert_eq!(value["item"]["createdDateTime"], "2026-08-20T06:30:00Z");
-        assert_eq!(value["sourceType"], "sharepoint");
+        assert_eq!(value["sourceType"], "shared");
         assert_eq!(value["sourceName"], "Engineering");
     }
 

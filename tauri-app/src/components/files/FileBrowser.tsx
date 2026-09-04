@@ -10,9 +10,9 @@ import {
   Loader2,
   FolderOpen,
   AlertCircle,
-  ChevronRight,
-  Home,
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   CheckSquare,
   Download,
   Upload,
@@ -27,6 +27,7 @@ import { useBookmarkStore } from "../../stores/bookmarkStore";
 import { FileItem, type FileItemAction } from "./FileItem";
 import { SearchBar } from "./SearchBar";
 import { SearchResults } from "./SearchResults";
+import { FolderBreadcrumb } from "./FolderBreadcrumb";
 import { isPreviewable } from "./FilePreview";
 import {
   ConvertDialog,
@@ -49,6 +50,7 @@ import type {
   DriveItem,
   LayoutMode,
   SearchScope,
+  SortKey,
 } from "../../lib/types";
 import { getErrorMessage } from "../../lib/errors";
 
@@ -62,6 +64,8 @@ interface FileBrowserProps {
   driveName: string;
   /** Open a file in a new preview tab. */
   onOpenPreview: (item: DriveItem) => void;
+  /** Leave for the account service page when Back is pressed at the drive root. */
+  onExitToHub: () => void;
 }
 
 type ActionDialog =
@@ -99,7 +103,47 @@ function LayoutButton({
   );
 }
 
-export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv, driveName, onOpenPreview }: FileBrowserProps) {
+/** Clickable column header: click toggles ascending/descending for that column. */
+function SortHeaderButton({
+  label,
+  column,
+  activeKey,
+  asc,
+  className,
+  tabId,
+  onChange,
+}: {
+  label: string;
+  column: SortKey;
+  activeKey: SortKey;
+  asc: boolean;
+  className?: string;
+  tabId: string;
+  onChange: (tabId: string, key: SortKey) => void;
+}) {
+  const { t } = useTranslation();
+  const isActive = column === activeKey;
+  const Arrow = asc ? ArrowUp : ArrowDown;
+  // Title shows what the NEXT click does.
+  const nextDirection = asc
+    ? t("fileBrowser.sortDescending")
+    : t("fileBrowser.sortAscending");
+  return (
+    <button
+      onClick={() => onChange(tabId, column)}
+      aria-sort={isActive ? (asc ? "ascending" : "descending") : "none"}
+      title={isActive ? `${label} → ${nextDirection}` : label}
+      className={`flex items-center gap-1 hover:text-foreground transition-colors ${
+        isActive ? "text-foreground" : ""
+      } ${className ?? ""}`}
+    >
+      <span>{label}</span>
+      {isActive && <Arrow className="h-3 w-3" />}
+    </button>
+  );
+}
+
+export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv, driveName, onOpenPreview, onExitToHub }: FileBrowserProps) {
   const { t } = useTranslation();
   const loadFolder = useTabStore((s) => s.loadFolder);
   const navigateToFolder = useTabStore((s) => s.navigateToFolder);
@@ -107,6 +151,7 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   const navigateUp = useTabStore((s) => s.navigateUp);
   const navigateToRoot = useTabStore((s) => s.navigateToRoot);
   const setTabLayoutMode = useTabStore((s) => s.setTabLayoutMode);
+  const setTabSort = useTabStore((s) => s.setTabSort);
   const tab = useTabStore((s) => s.tabs.find((t) => t.id === tabId));
   const addToast = useToastStore((s) => s.addToast);
   const lastDownloadPath = useSettingsStore((s) => s.lastDownloadPath);
@@ -118,6 +163,8 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   const breadcrumbs = tab?.breadcrumbs ?? [];
   const layoutMode = tab?.layoutMode ?? "list";
   const currentFolderId = tab?.currentFolderId ?? null;
+  const sortKey = tab?.sortKey ?? "name";
+  const sortAsc = tab?.sortAsc ?? true;
 
   // Search state (local to FileBrowser)
   const [searchQuery, setSearchQuery] = useState("");
@@ -596,38 +643,26 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Back button */}
+          {/* Back button: one level up, or back to the account service page at the root */}
           <button
-            onClick={() => navigateUp(tabId)}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-default"
-            disabled={breadcrumbs.length === 0}
+            onClick={() => {
+              if (breadcrumbs.length === 0) onExitToHub();
+              else navigateUp(tabId);
+            }}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent transition-colors"
             aria-label={t("files.back")}
             title={t("files.back")}
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
 
-          {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb">
-            <button
-              onClick={handleNavigateRoot}
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-            >
-              <Home className="h-3.5 w-3.5" />
-              <span>{driveName}</span>
-            </button>
-            {breadcrumbs.map((crumb, index) => (
-              <span key={crumb.id} className="flex items-center gap-1">
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                <button
-                  onClick={() => navigateToBreadcrumb(tabId, index)}
-                  className="rounded px-1.5 py-0.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                >
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </nav>
+          {/* Breadcrumbs: Explorer-style, leading levels collapse into "…" when long */}
+          <FolderBreadcrumb
+            driveName={driveName}
+            breadcrumbs={breadcrumbs}
+            onNavigateRoot={handleNavigateRoot}
+            onNavigateIndex={(index) => navigateToBreadcrumb(tabId, index)}
+          />
 
           {/* Refresh current folder */}
           <button
@@ -723,14 +758,40 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
         </div>
       ) : (
         <>
-          {/* List header (only in list mode) */}
+          {/* List header (only in list mode); columns click-toggle sort direction */}
           {layoutMode === "list" && !isLoading && !error && items.length > 0 && (
             <div className="flex items-center gap-3 px-3 py-1 border-b border-border text-xs text-muted-foreground font-medium">
               {selectionMode && <span className="w-4" />}
               <span className="w-5" />
-              <span className="flex-1">{t("fileBrowser.name")}</span>
-              <span className="w-24 text-right">{t("fileBrowser.size")}</span>
-              <span className="w-36 text-right">{t("fileBrowser.modified")}</span>
+              <SortHeaderButton
+                label={t("fileBrowser.name")}
+                column="name"
+                activeKey={sortKey}
+                asc={sortAsc}
+                className="flex-1"
+                onChange={setTabSort}
+                tabId={tabId}
+              />
+              <SortHeaderButton
+                label={t("fileBrowser.size")}
+                column="size"
+                activeKey={sortKey}
+                asc={sortAsc}
+                className="w-24 justify-end"
+                onChange={setTabSort}
+                tabId={tabId}
+              />
+              <SortHeaderButton
+                label={t("fileBrowser.modified")}
+                column="modified"
+                activeKey={sortKey}
+                asc={sortAsc}
+                className="w-36 justify-end"
+                onChange={setTabSort}
+                tabId={tabId}
+              />
+              {/* Placeholder aligned with the per-row "..." action menu */}
+              <span className="w-6 shrink-0" />
             </div>
           )}
 
