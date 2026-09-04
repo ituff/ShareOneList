@@ -40,7 +40,10 @@
     "name": "Name",
     "size": "Size",
     "modified": "Modified",
-    "type": "Type"
+    "type": "Type",
+    "sortAscending": "ascending",
+    "sortDescending": "descending",
+    "breadcrumbMore": "Show hidden parent folders"
   },
   "fileOps": {
     "open": "Open",
@@ -113,13 +116,20 @@
     "languageEn": "English",
     "languageZh": "简体中文",
     "about": "About",
-    "aboutDescription": "OneDrive & SharePoint, Global & China — one app for all your clouds",
+    "aboutDescription": "ShareOneList is a file management tool focused on Microsoft 365.",
     "version": "Version",
     "credits": "ShareOneList Contributors",
     "creditsDescription": "Cross-platform OneDrive & SharePoint file manager built with Tauri",
     "checkUpdate": "Check for Update",
     "downloadUpdate": "Download",
-    "upToDate": "You are using the latest version."
+    "upToDate": "You are using the latest version.",
+    "downloads": "Teams Recording Downloads",
+    "segmentConcurrency": "Recording segment download concurrency",
+    "segmentConcurrencyOption": "{{count}} threads",
+    "segmentConcurrencyHint": "How many Teams recording segments to download in parallel. Higher is faster, but too high may trigger server throttling (default 4).",
+    "github": "Project on GitHub",
+    "followTitle": "Follow ONE 生产力 on WeChat",
+    "followDescription": "If ShareOneList is useful to you, follow the author's WeChat account for occasional notes on handy productivity tools and tips."
   },
   "accounts": {
     "addAccount": "Add Account",
@@ -134,7 +144,16 @@
     "reLoginTitle": "Sign in again",
     "reLoginMessage": "Your credentials have expired. Please sign in again to continue.",
     "reLoginAction": "Sign in",
-    "alreadyConnected": "This account is already connected."
+    "alreadyConnected": "This account is already connected.",
+    "cloudGlobalOrganization": "Global - Organization",
+    "cloudGlobalPersonal": "Global - Personal",
+    "editAccount": "Edit Account",
+    "editSaved": "Account updated",
+    "aliasLabel": "Alias",
+    "aliasPlaceholder": "Enter a custom name",
+    "aliasHint": "Leave empty to use the sign-in name.",
+    "iconLabel": "Icon",
+    "iconHint": "Pick an icon from the default library; empty shows the kind-based default."
   },
   "driveHub": {
     "oneDrive": "OneDrive",
@@ -143,25 +162,23 @@
     "noOneDriveDesc": "This account does not have a OneDrive license.",
     "noSharePoint": "No SharePoint Sites",
     "noSharePointDesc": "No SharePoint sites found. For 21Vianet accounts, please follow sites in SharePoint first.",
-    "meetingRecordings": "Meeting Recordings",
-    "recordingsNotSupported": "Meeting recordings are not supported for 21Vianet accounts yet."
+    "meetingRecordings": "Teams Recordings",
+    "recordingsNotSupported": "Teams Recordings are not supported for 21Vianet accounts yet."
   },
   "recordings": {
-    "title": "Meeting Recordings",
-    "loading": "Loading meeting recordings…",
-    "empty": "No meeting recordings found",
+    "title": "Teams Recordings",
+    "loading": "Loading Teams recordings…",
+    "empty": "No Teams recordings found",
     "noMatches": "No recordings match the filter",
     "filterPlaceholder": "Filter by name or source",
     "layoutList": "List view",
     "layoutThumbnails": "Thumbnail view",
     "source": "Source",
-    "sourceOneDrive": "OneDrive",
-    "sourceSharePoint": "SharePoint",
-    "sourceSearch": "Search",
-    "created": "Created",
+    "sourceOwn": "Own",
+    "sourceShared": "Shared",
+    "modified": "Modified",
     "play": "Play",
-    "downloadStarted": "Download started",
-    "reloginRequired": "Session expired. Please sign in again to load meeting recordings."
+    "reloginRequired": "Session expired. Please sign in again to load Teams recordings."
   },
   "dialogs": {
     "confirm": "Confirm",
@@ -281,6 +298,8 @@
     "streamDone": "Recording saved",
     "streamFailed": "Stream download failed",
     "streamDrm": "This recording is DRM-protected and cannot be saved.",
+    "streamNotice": "This video has no download permission — saving via stream capture.",
+    "streamKeepOpen": "Keep this preview tab open while downloading.",
     "previous": "Previous file",
     "next": "Next file"
   },

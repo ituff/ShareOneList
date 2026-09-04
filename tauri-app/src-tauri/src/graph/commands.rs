@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
 use serde::Deserialize;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -353,26 +352,33 @@ fn path_points_to_recordings_folder(path: Option<&String>) -> bool {
     })
 }
 
-/// Collect meeting recordings via POST /search/query. Microsoft Search only
-/// returns items the signed-in user can access, mirroring what Stream web shows.
+/// Collect .mp4 files shared with the user via POST /search/query. Microsoft
+/// Search only returns items the signed-in user can access, mirroring what the
+/// OneDrive web UI shows; hits on the user's own drive are filtered out so the
+/// result is strictly the "shared with me" set (own recordings come from the
+/// Recordings folder source).
 /// This replaces the deprecated /me/drive/sharedWithMe endpoint which returns
 /// far fewer items than the OneDrive web UI.
-const RECORDING_SEARCH_QUERIES: [&str; 2] = ["\"teams meeting recording\"", "\"recording\""];
+const RECORDING_SEARCH_QUERY: &str = "filetype:mp4";
 const SEARCH_PAGE_SIZE: usize = 50;
-const SEARCH_MAX_PAGES_PER_QUERY: usize = 2;
+const SEARCH_MAX_PAGES: usize = 4;
 
-async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<MeetingRecording> {
+async fn collect_search_recordings(
+    client: &GraphClient,
+    token: &str,
+    own_drive_id: &str,
+) -> Vec<MeetingRecording> {
     let base = client.base_url();
     let url = format!("{}/search/query", base);
     let mut recordings = Vec::new();
 
-    for query_text in RECORDING_SEARCH_QUERIES {
+    {
         let mut from = 0usize;
-        for _page in 0..SEARCH_MAX_PAGES_PER_QUERY {
+        for _page in 0..SEARCH_MAX_PAGES {
             let body = serde_json::json!({
                 "requests": [{
                     "entityTypes": ["driveItem"],
-                    "query": { "queryString": query_text },
+                    "query": { "queryString": RECORDING_SEARCH_QUERY },
                     "from": from,
                     "size": SEARCH_PAGE_SIZE
                 }]
@@ -386,7 +392,7 @@ async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<Mee
                 Err(e) => {
                     eprintln!(
                         "[recordings] Search source query '{}' failed: {}",
-                        query_text, e
+                        RECORDING_SEARCH_QUERY, e
                     );
                     return recordings;
                 }
@@ -398,7 +404,7 @@ async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<Mee
                     Err(e) => {
                         eprintln!(
                             "[recordings] Search source query '{}' unparseable: {}",
-                            query_text, e
+                            RECORDING_SEARCH_QUERY, e
                         );
                         return recordings;
                     }
@@ -430,6 +436,10 @@ async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<Mee
                 if drive_id.is_empty() {
                     continue;
                 }
+                // Files on the user's own drive are not "shared with me".
+                if drive_id == own_drive_id {
+                    continue;
+                }
 
                 recordings.push(MeetingRecording {
                     drive_id,
@@ -452,7 +462,7 @@ async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<Mee
                             .as_str()
                             .map(|s| s.to_string()),
                     },
-                    source_type: RecordingSource::Search,
+                    source_type: RecordingSource::Shared,
                     source_name: String::new(),
                 });
             }
@@ -1185,19 +1195,29 @@ pub async fn get_site_drives(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Upper bounds that keep cross-site aggregation bounded on large tenants.
-const MAX_RECORDING_SITES: usize = 100;
-const MAX_DRIVES_PER_SITE: usize = 5;
-const MAX_RECORDING_CONTAINERS_PER_DRIVE: usize = 10;
-const RECORDING_SITE_CONCURRENCY: usize = 6;
 /// Cap for children pages fetched inside a single `Recordings` container.
 const MAX_CHILDREN_PER_CONTAINER: usize = 500;
 
 /// File extensions treated as Teams meeting recordings.
-const RECORDING_VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
+const RECORDING_VIDEO_EXTENSIONS: [&str; 1] = ["mp4"];
 
 /// Folder-name aliases accepted when locating the OneDrive recordings folder,
 /// covering tenants where the auto-created folder comes back localized.
-const RECORDINGS_FOLDER_ALIASES: [&str; 3] = ["Recordings", "会议录制", "录制"];
+/// Localized spellings of the OneDrive recordings folder. The user's default
+/// UI language decides which one the auto-created folder gets, so probe them
+/// all (matched case-insensitively).
+const RECORDINGS_FOLDER_ALIASES: [&str; 10] = [
+    "Recordings",       // en (and many untranslated tenants)
+    "会议录制",          // zh-CN
+    "录制",              // zh-CN alt
+    "Grabaciones",      // es
+    "Enregistrements",  // fr
+    "Aufzeichnungen",   // de
+    "Registrazioni",    // it
+    "Gravações",        // pt
+    "録画",              // ja
+    "녹화",              // ko
+];
 
 /// Whether a file name looks like a meeting recording (video extension).
 fn is_recording_video_name(name: &str) -> bool {
@@ -1209,21 +1229,59 @@ fn is_recording_video_name(name: &str) -> bool {
     }
 }
 
+/// Probe whether the signed-in user can actually download a drive item.
+///
+/// A withheld `@microsoft.graph.downloadUrl` is only one flavor of "download
+/// blocked" — share-link block-download policies instead reject the `/content`
+/// endpoint with 403 while the item metadata still lists a downloadUrl. So we
+/// ask `/content` directly for a 1-byte range and let the status decide.
+#[tauri::command]
+pub async fn probe_download_allowed(
+    cloud_env: String,
+    drive_id: String,
+    item_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+) -> Result<bool, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_drive(env.clone(), &drive_id).await?
+    };
+
+    let client = GraphClient::new(env);
+    let url = format!(
+        "{}/drives/{}/items/{}/content",
+        client.base_url(),
+        drive_id,
+        item_id
+    );
+
+    // 403/401 on /content IS the "download blocked" signal — request_with_retry
+    // surfaces it as Err, so map it to `false` instead of propagating.
+    match client
+        .request_with_retry(&token, |http, tkn| {
+            http.get(&url)
+                .bearer_auth(tkn)
+                .header("Range", "bytes=0-1")
+        })
+        .await
+    {
+        Ok(response) => Ok(response.status().is_success()),
+        Err(AppError::GraphApi { status_code: 403, .. })
+        | Err(AppError::GraphApi { status_code: 401, .. }) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 /// Epoch seconds used to order recordings; unparseable dates sink to the bottom.
 fn recording_epoch(recording: &MeetingRecording) -> i64 {
-    let candidate = recording
-        .item
-        .created_date_time
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&recording.item.last_modified);
-    DateTime::parse_from_rfc3339(candidate)
+    DateTime::parse_from_rfc3339(&recording.item.last_modified)
         .ok()
         .map(|dt| dt.with_timezone(&Utc).timestamp())
         .unwrap_or(i64::MIN)
 }
 
-/// Sort recordings newest first (createdDateTime), name ascending as tiebreak.
+/// Sort recordings newest first (lastModifiedDateTime), name ascending as tiebreak.
 fn sort_recordings_desc(recordings: &mut [MeetingRecording]) {
     recordings.sort_by(|a, b| {
         recording_epoch(b)
@@ -1329,8 +1387,13 @@ fn children_into_recordings(
 }
 
 /// Collect recordings from the signed-in user's OneDrive `Recordings` folder.
-/// Missing folder or permission problems simply yield no recordings.
-async fn collect_onedrive_recordings(client: &GraphClient, token: &str) -> Vec<MeetingRecording> {
+/// Returns the user's own drive id alongside the recordings so the search
+/// source can exclude own-drive hits. Missing folder or permission problems
+/// simply yield no recordings.
+async fn collect_onedrive_recordings(
+    client: &GraphClient,
+    token: &str,
+) -> (String, Vec<MeetingRecording>) {
     let base = client.base_url();
 
     // Resolve the user's own drive id so later thumbnails/downloads can address it.
@@ -1343,17 +1406,17 @@ async fn collect_onedrive_recordings(client: &GraphClient, token: &str) -> Vec<M
             Ok(drive) => drive.id.unwrap_or_default(),
             Err(e) => {
                 eprintln!("[recordings] OneDrive source skipped: bad drive response: {}", e);
-                return Vec::new();
+                return (String::new(), Vec::new());
             }
         },
         Err(e) => {
             eprintln!("[recordings] OneDrive source skipped: drive lookup failed: {}", e);
-            return Vec::new();
+            return (String::new(), Vec::new());
         }
     };
     if drive_id.is_empty() {
         eprintln!("[recordings] OneDrive source skipped: empty drive id");
-        return Vec::new();
+        return (String::new(), Vec::new());
     }
 
     let url = format!(
@@ -1380,7 +1443,7 @@ async fn collect_onedrive_recordings(client: &GraphClient, token: &str) -> Vec<M
                         "[recordings] OneDrive recordings folder not found (localized probe failed): {}",
                         e
                     );
-                    return Vec::new();
+                    return (drive_id, Vec::new());
                 }
             }
         }
@@ -1389,117 +1452,13 @@ async fn collect_onedrive_recordings(client: &GraphClient, token: &str) -> Vec<M
                 "[recordings] OneDrive Recordings folder listing failed: {}",
                 e
             );
-            return Vec::new();
+            return (drive_id, Vec::new());
         }
     };
-    children_into_recordings(children, &drive_id, RecordingSource::OneDrive, "")
-}
-
-/// Collect channel-meeting recordings from one SharePoint site by finding its
-/// `Recordings` folders (exactly named, case-insensitive) across its drives.
-async fn collect_site_recordings(
-    client: &GraphClient,
-    token: &str,
-    site: &Site,
-) -> Vec<MeetingRecording> {
-    if site.id.is_empty() {
-        return Vec::new();
-    }
-    let base = client.base_url();
-    let mut recordings = Vec::new();
-
-    let drives_url = format!("{}/sites/{}/drives?$top=50", base, site.id);
-    let drives = match client
-        .request_with_retry(token, |http, tkn| http.get(&drives_url).bearer_auth(tkn))
-        .await
-    {
-        Ok(response) => match response.json::<GraphCollection<RawDrive>>().await {
-            Ok(collection) => collection.value,
-            Err(e) => {
-                eprintln!(
-                    "[recordings] Site '{}' skipped: bad drives response: {}",
-                    site.display_name, e
-                );
-                return recordings;
-            }
-        },
-        Err(e) => {
-            eprintln!(
-                "[recordings] Site '{}' skipped: drives listing failed: {}",
-                site.display_name, e
-            );
-            return recordings;
-        }
-    };
-
-    for drive in drives.iter().take(MAX_DRIVES_PER_SITE) {
-        let Some(drive_id) = drive.id.as_deref().filter(|id| !id.is_empty()) else {
-            continue;
-        };
-
-        let search_url = format!(
-            "{}/drives/{}/root/search(q='Recordings')?$select={}",
-            base, drive_id, DRIVE_ITEM_SELECT
-        );
-        let containers: Vec<String> = match client
-            .request_with_retry(token, |http, tkn| http.get(&search_url).bearer_auth(tkn))
-            .await
-        {
-            Ok(response) => match response.json::<GraphCollection<RawDriveItem>>().await {
-                Ok(found) => found
-                    .value
-                    .into_iter()
-                    .map(DriveItem::from)
-                    .filter(|item| item.is_folder && item.name.eq_ignore_ascii_case("Recordings"))
-                    .take(MAX_RECORDING_CONTAINERS_PER_DRIVE)
-                    .map(|item| item.id)
-                    .collect(),
-                Err(e) => {
-                    eprintln!(
-                        "[recordings] Site '{}' drive '{}': Recordings search failed: {}",
-                        site.display_name,
-                        drive.name.as_deref().unwrap_or(drive_id),
-                        e
-                    );
-                    continue;
-                }
-            },
-            Err(e) => {
-                eprintln!(
-                    "[recordings] Site '{}' drive '{}': Recordings search request failed: {}",
-                    site.display_name,
-                    drive.name.as_deref().unwrap_or(drive_id),
-                    e
-                );
-                continue;
-            }
-        };
-
-        for container_id in containers {
-            let children_url = format!(
-                "{}/drives/{}/items/{}/children?$top=200&$select={}",
-                base, drive_id, container_id, DRIVE_ITEM_SELECT
-            );
-            if let Ok(children) = fetch_all_children(
-                client,
-                token,
-                children_url,
-                MAX_CHILDREN_PER_CONTAINER,
-                false,
-            )
-            .await
-            {
-                recordings.extend(children_into_recordings(
-                    children,
-                    drive_id,
-                    RecordingSource::SharePoint,
-                    &site.display_name,
-                ));
-            }
-        }
-    }
-
-    recordings
+    (
+        drive_id.clone(),
+        children_into_recordings(children, &drive_id, RecordingSource::Own, ""),
+    )
 }
 
 /// Aggregate Teams meeting recordings visible to the account:
@@ -1525,30 +1484,15 @@ pub async fn get_meeting_recordings(
 
     let client = Arc::new(GraphClient::new(env.clone()));
 
-    let mut recordings = collect_onedrive_recordings(&client, &token).await;
+    let (own_drive_id, mut recordings) = collect_onedrive_recordings(&client, &token).await;
 
-    // Recordings shared with the user cover participant meetings: those files
-    // live inside other people's OneDrive recordings folders.  Microsoft Search
-    // (/search/query) is used instead of /me/drive/sharedWithMe because the
-    // latter is deprecated and returns far fewer items than the web UI shows.
+    // The "shared with me" half: .mp4 files other people shared with the user,
+    // via Microsoft Search (/search/query) because /me/drive/sharedWithMe is
+    // deprecated and returns far fewer items than the web UI shows. Hits on
+    // the user's own drive are excluded there, so the two sources don't overlap.
     if env == CloudEnvironment::Global {
-        recordings.extend(collect_search_recordings(&client, &token).await);
+        recordings.extend(collect_search_recordings(&client, &token, &own_drive_id).await);
     }
-
-    let sites = discover_sites(&client, env.clone(), &token)
-        .await
-        .into_iter()
-        .take(MAX_RECORDING_SITES);
-
-    let site_recordings = futures::stream::iter(sites.map(|site| {
-        let client = Arc::clone(&client);
-        let token = token.clone();
-        async move { collect_site_recordings(&client, &token, &site).await }
-    }))
-    .buffer_unordered(RECORDING_SITE_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    recordings.extend(site_recordings.into_iter().flatten());
 
     // Register discovered drive ids so later per-drive commands (thumbnails,
     // previews) can mint tokens the same way OneDrive tabs already do.
@@ -1572,34 +1516,38 @@ pub async fn get_meeting_recordings(
 mod tests {
     use super::*;
 
-    fn recording(name: &str, created: Option<&str>) -> MeetingRecording {
+
+
+
+    fn recording(name: &str, modified: &str) -> MeetingRecording {
         MeetingRecording {
             drive_id: "drive".to_string(),
             item: DriveItem {
                 id: name.to_string(),
                 name: name.to_string(),
                 size: Some(1),
-                last_modified: "2026-01-01T00:00:00Z".to_string(),
+                last_modified: modified.to_string(),
                 is_folder: false,
                 mime_type: Some("video/mp4".to_string()),
                 web_url: None,
                 parent_reference: None,
                 download_url: None,
-                created_date_time: created.map(|s| s.to_string()),
+                created_date_time: None,
             },
-            source_type: RecordingSource::OneDrive,
+            source_type: RecordingSource::Own,
             source_name: String::new(),
         }
     }
 
     #[test]
-    fn video_extension_filter_matches_recording_names_case_insensitively() {
+    fn video_extension_filter_accepts_mp4_only() {
         assert!(is_recording_video_name(
             "2026-08-20 14-30 - Sprint Review.MP4"
         ));
-        assert!(is_recording_video_name("meeting.mkv"));
-        assert!(is_recording_video_name("clip.WebM"));
 
+        // Teams recordings are .mp4; other video containers do not count.
+        assert!(!is_recording_video_name("meeting.mkv"));
+        assert!(!is_recording_video_name("clip.webm"));
         // Transcripts, documents and extension-less names are not recordings.
         assert!(!is_recording_video_name("meeting.vtt"));
         assert!(!is_recording_video_name("notes.txt"));
@@ -1625,10 +1573,10 @@ mod tests {
     #[test]
     fn recordings_sort_newest_first_and_unparseable_dates_sink_to_bottom() {
         let mut recordings = vec![
-            recording("old", Some("2026-08-19T10:00:00Z")),
-            recording("bad", None),
-            recording("newest", Some("2026-08-20T14:30:00Z")),
-            recording("middle", Some("2026-08-20T06:30:00Z")),
+            recording("old", "2026-08-19T10:00:00Z"),
+            recording("bad", "not-a-date"),
+            recording("newest", "2026-08-20T14:30:00Z"),
+            recording("middle", "2026-08-20T06:30:00Z"),
         ];
 
         sort_recordings_desc(&mut recordings);
@@ -1640,9 +1588,9 @@ mod tests {
     #[test]
     fn recordings_sort_tiebreaks_by_name_case_insensitively() {
         let mut recordings = vec![
-            recording("Sprint", Some("2026-08-20T14:30:00Z")),
-            recording("alpha", Some("2026-08-20T14:30:00Z")),
-            recording("Beta", Some("2026-08-20T14:30:00Z")),
+            recording("Sprint", "2026-08-20T14:30:00Z"),
+            recording("alpha", "2026-08-20T14:30:00Z"),
+            recording("Beta", "2026-08-20T14:30:00Z"),
         ];
 
         sort_recordings_desc(&mut recordings);

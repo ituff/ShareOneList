@@ -1,8 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2, Globe, Cloud } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { LoginDialog } from "./LoginDialog";
+import { EditAccountDialog } from "./EditAccountDialog";
+import { AccountIcon } from "./AccountIcon";
+import {
+  accountDisplayName,
+  accountKindLabelKey,
+  resolveAccountKind,
+} from "../../lib/account";
 import type { AccountEntry, CloudEnvironment } from "../../lib/types";
 
 interface AccountListProps {
@@ -11,14 +18,18 @@ interface AccountListProps {
 }
 
 /**
- * Displays the list of connected accounts with display name and cloud environment label.
- * Provides "Add Account" button and per-account remove button.
+ * Displays the list of connected accounts with personalized alias/icon and
+ * the account kind label (21Vianet / Global-Organization / Global-Personal).
+ * Provides "Add Account", per-account edit and remove buttons.
  */
 export function AccountList({ onDriveSelect }: AccountListProps) {
   const { t } = useTranslation();
-  const { accounts, isLoaded, loadAccounts, removeAccount } = useAuthStore();
+  const { accounts, isLoaded, loadAccounts, refreshAccountTypes, removeAccount } = useAuthStore();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<AccountEntry | null>(null);
+  const [editing, setEditing] = useState<AccountEntry | null>(null);
+  /** Guard so the background type refresh runs once per mount, not per render. */
+  const typeRefreshStarted = useRef(false);
 
   // Load cached accounts from backend on mount
   useEffect(() => {
@@ -27,40 +38,29 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
     }
   }, [isLoaded, loadAccounts]);
 
+  // Heal account types saved before driveType-based detection (or legacy
+  // entries without a type) once after the accounts arrive.
+  useEffect(() => {
+    if (isLoaded && accounts.length > 0 && !typeRefreshStarted.current) {
+      typeRefreshStarted.current = true;
+      refreshAccountTypes();
+    }
+  }, [isLoaded, accounts, refreshAccountTypes]);
+
   const handleRemove = async (account: AccountEntry) => {
     await removeAccount(account.homeAccountId, account.cloudType);
     setConfirmRemove(null);
   };
 
-  const getCloudLabel = (cloudType: CloudEnvironment): string => {
-    return cloudType.toLowerCase() === "global"
-      ? t("accounts.cloudGlobal")
-      : t("accounts.cloudChina");
-  };
-
-  /** Second line of the label: personal/organizational marker for global accounts. */
-  const getAccountTypeLabel = (account: AccountEntry): string | null => {
-    if (account.cloudType !== "global" || !account.accountType) {
-      return null;
-    }
-    return account.accountType === "personal"
-      ? t("accounts.typePersonal")
-      : t("accounts.typeOrganization");
+  /** The account kind label. Three distinct kinds are shown — 21Vianet,
+   * Global-Organization, Global-Personal — instead of just the cloud env. */
+  const getAccountKindLabel = (account: AccountEntry): string => {
+    const kind = resolveAccountKind(account.cloudType, account.accountType ?? null);
+    return t(accountKindLabelKey(kind));
   };
 
   const getDisplayName = (account: AccountEntry): string => {
-    if (account.displayName && account.displayName !== "Unknown User") {
-      return account.displayName;
-    }
-    return getCloudLabel(account.cloudType);
-  };
-
-  const CloudIcon = ({ cloudType }: { cloudType: CloudEnvironment }) => {
-    return cloudType === "global" ? (
-      <Globe className="h-4 w-4 text-blue-500" />
-    ) : (
-      <Cloud className="h-4 w-4 text-orange-500" />
-    );
+    return accountDisplayName(account) || getAccountKindLabel(account);
   };
 
   return (
@@ -101,29 +101,33 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
               }}
             >
               <div className="flex items-center gap-3">
-                <CloudIcon cloudType={account.cloudType} />
+                <AccountIcon account={account} className="h-5 w-5" />
                 <div>
                   <div className="text-sm font-medium text-foreground">
                     {getDisplayName(account)}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {getCloudLabel(account.cloudType)}
-                    {getAccountTypeLabel(account) && (
-                      <span className="text-muted-foreground/70">
-                        {" · "}
-                        {getAccountTypeLabel(account)}
-                      </span>
-                    )}
+                    {getAccountKindLabel(account)}
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => setConfirmRemove(account)}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                aria-label={t("accounts.removeAccount")}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setEditing(account)}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                  aria-label={t("accounts.editAccount")}
+                  title={t("accounts.editAccount")}
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setConfirmRemove(account)}
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                  aria-label={t("accounts.removeAccount")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -134,6 +138,11 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
         <LoginDialog onClose={() => setShowLoginDialog(false)} />
       )}
 
+      {/* Alias / icon edit dialog */}
+      {editing && (
+        <EditAccountDialog account={editing} onClose={() => setEditing(null)} />
+      )}
+
       {/* Remove confirmation dialog */}
       {confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -142,7 +151,7 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
               {t("accounts.removeAccount")}
             </h4>
             <p className="text-sm text-muted-foreground mb-4">
-              {confirmRemove.displayName} ({getCloudLabel(confirmRemove.cloudType)})
+              {getDisplayName(confirmRemove)} ({getAccountKindLabel(confirmRemove)})
             </p>
             <div className="flex justify-end gap-2">
               <button

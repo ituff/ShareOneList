@@ -124,6 +124,8 @@ impl ConfigManager {
                     cloud_type,
                     display_name,
                     account_type: None,
+                    alias: None,
+                    icon: None,
                 });
                 changed = true;
             }
@@ -272,9 +274,13 @@ mod tests {
                 is_maximized: true,
             },
             last_download_path: Some("C:/Downloads".to_string()),
+            segment_download_concurrency: 8,
         };
 
         mgr.save_config(&config).unwrap();
+
+        let loaded_config = mgr.load_config();
+        assert_eq!(loaded_config.segment_download_concurrency, 8);
         let loaded = mgr.load_config();
 
         assert_eq!(loaded.theme, ThemeMode::Dark);
@@ -316,6 +322,8 @@ mod tests {
                 cloud_type: CloudEnvironment::Global,
                 display_name: "Test User".to_string(),
                 account_type: Some(AccountCategory::Organization),
+                alias: None,
+                icon: None,
             },
             AccountEntry {
                 home_account_id: "user-2".to_string(),
@@ -323,6 +331,8 @@ mod tests {
                 cloud_type: CloudEnvironment::China,
                 display_name: "测试用户".to_string(),
                 account_type: None,
+                alias: Some("我的网盘".to_string()),
+                icon: Some("star-amber".to_string()),
             },
         ];
 
@@ -335,6 +345,30 @@ mod tests {
         assert_eq!(loaded[1].home_account_id, "user-2");
         assert_eq!(loaded[1].cloud_type, CloudEnvironment::China);
         assert_eq!(loaded[1].display_name, "测试用户");
+        assert_eq!(loaded[1].alias.as_deref(), Some("我的网盘"));
+        assert_eq!(loaded[1].icon.as_deref(), Some("star-amber"));
+    }
+
+    #[test]
+    fn load_accounts_tolerates_entries_without_alias_and_icon() {
+        let dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        fs::write(
+            mgr.accounts_path.clone(),
+            r#"[{
+                "homeAccountId": "user-1",
+                "driveId": "drive-1",
+                "cloudType": "global",
+                "displayName": "Test User",
+                "accountType": "personal"
+            }]"#,
+        )
+        .unwrap();
+
+        let loaded = mgr.load_accounts();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].alias, None);
+        assert_eq!(loaded[0].icon, None);
     }
 
     #[test]
