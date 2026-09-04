@@ -40,7 +40,10 @@
     "name": "名称",
     "size": "大小",
     "modified": "修改日期",
-    "type": "类型"
+    "type": "类型",
+    "sortAscending": "升序",
+    "sortDescending": "降序",
+    "breadcrumbMore": "显示隐藏的上级文件夹"
   },
   "fileOps": {
     "open": "打开",
@@ -113,13 +116,20 @@
     "languageEn": "English",
     "languageZh": "简体中文",
     "about": "关于",
-    "aboutDescription": "OneDrive 与 SharePoint，国际版与世纪互联——一个应用，连接所有云",
+    "aboutDescription": "ShareOneList 是一个专注 Microsoft 365 的文件管理工具。",
     "version": "版本",
     "credits": "ShareOneList Contributors",
     "creditsDescription": "基于 Tauri 构建的跨平台 OneDrive 与 SharePoint 文件管理器",
     "checkUpdate": "检查更新",
     "downloadUpdate": "下载",
-    "upToDate": "已经是最新版本。"
+    "upToDate": "已经是最新版本。",
+    "downloads": "Teams录像下载设置",
+    "segmentConcurrency": "录像分段下载并发数",
+    "segmentConcurrencyOption": "{{count}} 线程",
+    "segmentConcurrencyHint": "同时下载 Teams 录像分段的连接数。数值越大越快，但过高可能触发服务器限流（默认 4）。",
+    "github": "项目地址",
+    "followTitle": "关注「ONE生产力」",
+    "followDescription": "如果 ShareOneList 对你有帮助，欢迎关注作者的公众号「ONE生产力」，会不定期分享好用的生产力工具和使用心得。"
   },
   "accounts": {
     "addAccount": "添加账户",
@@ -134,7 +144,16 @@
     "reLoginTitle": "重新登录",
     "reLoginMessage": "你的登录凭据已过期，请重新登录以继续访问。",
     "reLoginAction": "重新登录",
-    "alreadyConnected": "此账户已经连接。"
+    "alreadyConnected": "此账户已经连接。",
+    "cloudGlobalOrganization": "国际版-组织",
+    "cloudGlobalPersonal": "国际版-个人",
+    "editAccount": "编辑账户",
+    "editSaved": "账户信息已更新",
+    "aliasLabel": "别名",
+    "aliasPlaceholder": "输入自定义名称",
+    "aliasHint": "留空则使用登录名称。",
+    "iconLabel": "图标",
+    "iconHint": "从默认图标库中选择一个图标，留空则按账户类型显示默认图标。"
   },
   "driveHub": {
     "oneDrive": "OneDrive",
@@ -143,25 +162,23 @@
     "noOneDriveDesc": "此账户没有 OneDrive 许可证。",
     "noSharePoint": "没有 SharePoint 站点",
     "noSharePointDesc": "未找到 SharePoint 站点。世纪互联账户需要先在 SharePoint 中关注站点。",
-    "meetingRecordings": "会议录像",
-    "recordingsNotSupported": "会议录像暂不支持世纪互联账户。"
+    "meetingRecordings": "Teams 录像",
+    "recordingsNotSupported": "Teams 录像暂不支持世纪互联账户。"
   },
   "recordings": {
-    "title": "会议录像",
-    "loading": "正在加载会议录像…",
-    "empty": "未找到会议录像",
+    "title": "Teams 录像",
+    "loading": "正在加载 Teams 录像…",
+    "empty": "未找到 Teams 录像",
     "noMatches": "没有符合筛选条件的录像",
     "filterPlaceholder": "按名称或来源筛选",
     "layoutList": "列表视图",
     "layoutThumbnails": "缩略图视图",
     "source": "来源",
-    "sourceOneDrive": "OneDrive",
-    "sourceSharePoint": "SharePoint",
-    "sourceSearch": "搜索结果",
-    "created": "创建时间",
+    "sourceOwn": "本人",
+    "sourceShared": "分享",
+    "modified": "修改时间",
     "play": "播放",
-    "downloadStarted": "已开始下载",
-    "reloginRequired": "会话已失效，请重新登录后再加载会议录像。"
+    "reloginRequired": "会话已失效，请重新登录后再加载 Teams 录像。"
   },
   "dialogs": {
     "confirm": "确认",
@@ -281,6 +298,8 @@
     "streamDone": "录像已保存",
     "streamFailed": "流式下载失败",
     "streamDrm": "该录像受 DRM 保护，无法保存。",
+    "streamNotice": "该视频没有下载权限，将使用流式下载保存。",
+    "streamKeepOpen": "下载进行中，请保持本预览页打开，不要关闭标签页。",
     "previous": "上一个文件",
     "next": "下一个文件"
   },

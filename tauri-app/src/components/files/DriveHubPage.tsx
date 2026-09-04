@@ -1,6 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { HardDrive, Building2, Video, ArrowLeft } from "lucide-react";
 import type { AccountEntry, CloudEnvironment } from "../../lib/types";
+import {
+  accountDisplayName,
+  accountKindLabelKey,
+  resolveAccountKind,
+  supportsMeetingRecordings,
+  supportsSharePoint,
+} from "../../lib/account";
 import { StorageInfo } from "./StorageInfo";
 import { useToastStore } from "../../stores/toastStore";
 
@@ -19,8 +26,10 @@ interface DriveHubPageProps {
 
 /**
  * Service selection page shown after selecting an account.
- * Lets the user choose between OneDrive, SharePoint,
- * or the Teams meeting recordings page.
+ * The offered services depend on the account kind:
+ * - 21Vianet: OneDrive, SharePoint
+ * - Global organization: OneDrive, SharePoint, Meeting recordings
+ * - Global personal: OneDrive
  */
 export function DriveHubPage({
   account,
@@ -31,8 +40,9 @@ export function DriveHubPage({
 }: DriveHubPageProps) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
-  // Meeting recordings are global-only for now.
-  const isRecordingsSupported = account.cloudType === "global";
+  const kind = resolveAccountKind(account.cloudType, account.accountType ?? null);
+  const showSharePoint = supportsSharePoint(kind);
+  const showRecordings = supportsMeetingRecordings(kind);
 
   const handleOneDrive = () => {
     if (!account.driveId) {
@@ -54,17 +64,16 @@ export function DriveHubPage({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h3 className="text-lg font-semibold text-foreground">
-          {account.displayName === "Unknown User"
-            ? account.cloudType.toLowerCase() === "global"
-              ? t("accounts.cloudGlobal")
-              : t("accounts.cloudChina")
-            : account.displayName}
+          {accountDisplayName(account) || t(accountKindLabelKey(kind))}
         </h3>
+        <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+          {t(accountKindLabelKey(kind))}
+        </span>
       </div>
 
       {/* Service selection cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        {/* OneDrive */}
+        {/* OneDrive (all account kinds) */}
         <button
           onClick={handleOneDrive}
           className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 hover:bg-accent/30 hover:border-primary/50 transition-colors cursor-pointer"
@@ -75,40 +84,31 @@ export function DriveHubPage({
           </span>
         </button>
 
-        {/* SharePoint */}
-        <button
-          onClick={onSharePointSelect}
-          className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 hover:bg-accent/30 hover:border-primary/50 transition-colors cursor-pointer"
-        >
-          <Building2 className="h-10 w-10 text-purple-500" />
-          <span className="text-sm font-medium text-foreground">
-            {t("driveHub.sharePoint")}
-          </span>
-        </button>
+        {/* SharePoint (21Vianet and global organization accounts) */}
+        {showSharePoint && (
+          <button
+            onClick={onSharePointSelect}
+            className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 hover:bg-accent/30 hover:border-primary/50 transition-colors cursor-pointer"
+          >
+            <Building2 className="h-10 w-10 text-purple-500" />
+            <span className="text-sm font-medium text-foreground">
+              {t("driveHub.sharePoint")}
+            </span>
+          </button>
+        )}
 
-        {/* Meeting recordings (global accounts only) */}
-        <button
-          onClick={() => {
-            if (!isRecordingsSupported) {
-              addToast("error", t("driveHub.recordingsNotSupported"));
-              return;
-            }
-            onMeetingsSelect();
-          }}
-          className={`flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 transition-colors ${
-            isRecordingsSupported
-              ? "hover:bg-accent/30 hover:border-primary/50 cursor-pointer"
-              : "cursor-default opacity-50"
-          }`}
-          title={
-            isRecordingsSupported ? undefined : t("driveHub.recordingsNotSupported")
-          }
-        >
-          <Video className="h-10 w-10 text-red-500" />
-          <span className="text-sm font-medium text-foreground">
-            {t("driveHub.meetingRecordings")}
-          </span>
-        </button>
+        {/* Meeting recordings (global organization accounts only) */}
+        {showRecordings && (
+          <button
+            onClick={onMeetingsSelect}
+            className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 hover:bg-accent/30 hover:border-primary/50 transition-colors cursor-pointer"
+          >
+            <Video className="h-10 w-10 text-red-500" />
+            <span className="text-sm font-medium text-foreground">
+              {t("driveHub.meetingRecordings")}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Storage quota display */}

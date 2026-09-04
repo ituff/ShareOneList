@@ -59,3 +59,15 @@ Teams 会议录像在 Stream 经典版退役后以普通文件形式存储：非
 ## 性能与限额（见 design）
 
 - 参与聚合并发 ≤6，每站点最多枚举 5 个驱动器、每个驱动器最多取 10 个 `Recordings` 容器，站点总数上限 100。
+
+## 2026-09-04 范围调整
+
+- 功能更名「Teams 录像」（"Teams Recordings"），入口卡片、页面标题、标签页同步改名。
+- 列表只保留两个来源：
+  1. **本人**：用户 OneDrive 中 `Recordings` 文件夹下的 `.mp4` 文件。文件夹名随用户 UI 语言本地化（Recordings / 会议录制 / 录制 / Grabaciones / Enregistrements / Aufzeichnungen / Registrazioni / Gravações / 録画 / 녹화），逐一探测。
+  2. **分享**：Microsoft Search（`filetype:mp4`）列出分享给用户的 `.mp4` 文件，排除用户自身 drive 的命中。
+- SharePoint 站点频道录制枚举（discover_sites + 站点 drives 遍历）移除。
+- 扩展名过滤收紧为仅 `.mp4`。
+- 列表按 **修改时间** 倒序（原为创建时间）。
+- 来源列显示「本人 / 分享」（`RecordingSource::Own | Shared`）。
+- 列表不再提供下载按钮（在线预览与「在浏览器打开」保留）。

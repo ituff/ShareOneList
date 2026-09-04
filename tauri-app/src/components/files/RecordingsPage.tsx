@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
   ArrowLeft,
-  Download,
   ExternalLink,
   LayoutGrid,
   List as ListIcon,
@@ -13,15 +12,10 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
-import { dirname, downloadDir, join } from "@tauri-apps/api/path";
-import { save } from "@tauri-apps/plugin-dialog";
-import { downloadFile, getMeetingRecordings, getThumbnailUrl } from "../../lib/tauri";
+import { getMeetingRecordings, getThumbnailUrl } from "../../lib/tauri";
 import type { AccountEntry, MeetingRecording } from "../../lib/types";
 import { formatFileSize, formatDate } from "../../lib/formatters";
-import { useSettingsStore } from "../../stores/settingsStore";
-import { useTaskStore } from "../../stores/taskStore";
 import { useAuthStore } from "../../stores/authStore";
-import { useToastStore } from "../../stores/toastStore";
 import { getErrorMessage, isAuthError } from "../../lib/errors";
 
 /** View modes of the recordings page. */
@@ -108,21 +102,14 @@ function RecordingThumbnail({
 }
 
 function sourceLabel(recording: MeetingRecording, t: (key: string) => string): string {
-  if (recording.sourceType === "onedrive") {
-    return t("recordings.sourceOneDrive");
-  }
-  if (recording.sourceType === "search") {
-    return t("recordings.sourceSearch");
-  }
-  return recording.sourceName || t("recordings.sourceSharePoint");
+  return recording.sourceType === "own"
+    ? t("recordings.sourceOwn")
+    : t("recordings.sourceShared");
 }
 
 /** Page listing all Teams meeting recordings the account can access. */
 export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsPageProps) {
   const { t } = useTranslation();
-  const addToast = useToastStore((s) => s.addToast);
-  const lastDownloadPath = useSettingsStore((s) => s.lastDownloadPath);
-  const setLastDownloadPath = useSettingsStore((s) => s.setLastDownloadPath);
   const pendingRelogin = useAuthStore((s) => s.pendingRelogin);
 
   const [recordings, setRecordings] = useState<MeetingRecording[]>([]);
@@ -133,7 +120,6 @@ export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsP
   const [viewMode, setViewMode] = useState<RecordingsViewMode>("list");
   const [filterText, setFilterText] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const prevPendingReloginRef = useRef(pendingRelogin);
 
   const load = useCallback(async () => {
@@ -180,44 +166,6 @@ export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsP
       })
     : recordings;
 
-  const handleDownload = useCallback(
-    async (recording: MeetingRecording) => {
-      if (downloadingId) return;
-      setDownloadingId(recording.item.id);
-      try {
-        const dir = lastDownloadPath ?? (await downloadDir());
-        const defaultPath = await join(dir, recording.item.name);
-        const selected = await save({ defaultPath });
-        if (!selected) return;
-        setLastDownloadPath(await dirname(selected));
-        const batch = await downloadFile(
-          recording.driveId,
-          recording.item.id,
-          account.homeAccountId,
-          recording.item.name,
-          recording.item.size ?? 0,
-          selected,
-          account.cloudType
-        );
-        useTaskStore.getState().registerTask(batch.batchId, {
-          type: "download",
-          fileName: batch.batchName,
-          homeAccountId: account.homeAccountId,
-          driveId: recording.driveId,
-          cloudEnv: account.cloudType,
-          itemId: recording.item.id,
-          localPath: selected,
-        });
-        addToast("success", t("recordings.downloadStarted"));
-      } catch (err) {
-        addToast("error", getErrorMessage(err));
-      } finally {
-        setDownloadingId(null);
-      }
-    },
-    [account.cloudType, account.homeAccountId, downloadingId, lastDownloadPath, setLastDownloadPath, addToast, t]
-  );
-
   const handleOpen = useCallback(
     (recording: MeetingRecording) => {
       setSelectedId(recording.item.id);
@@ -238,18 +186,6 @@ export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsP
         aria-label={t("recordings.play")}
       >
         <Play className="h-3.5 w-3.5" />
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          handleDownload(recording);
-        }}
-        disabled={downloadingId === recording.item.id}
-        className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-hover:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-40"
-        title={t("fileOps.download")}
-        aria-label={t("fileOps.download")}
-      >
-        <Download className="h-3.5 w-3.5" />
       </button>
       {recording.item.webUrl && (
         <a
@@ -381,7 +317,7 @@ export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsP
                   <span className="flex-1">{t("fileBrowser.name")}</span>
                   <span className="w-40 truncate">{t("recordings.source")}</span>
                   <span className="w-24 text-right">{t("fileBrowser.size")}</span>
-                  <span className="w-36 text-right">{t("recordings.created")}</span>
+                  <span className="w-36 text-right">{t("recordings.modified")}</span>
                   <span className="w-[70px]" />
                 </div>
                 <div className="flex flex-col">
@@ -416,7 +352,7 @@ export function RecordingsPage({ account, onOpenRecording, onBack }: RecordingsP
                         {formatFileSize(recording.item.size ?? 0)}
                       </span>
                       <span className="w-36 text-right text-xs text-muted-foreground">
-                        {formatDate(recording.item.createdDateTime ?? recording.item.lastModified)}
+                        {formatDate(recording.item.lastModified)}
                       </span>
                       {rowActions(recording)}
                     </div>

@@ -4,6 +4,7 @@ import type {
   CloudEnvironment,
   DriveItem,
   LayoutMode,
+  SortKey,
   TabState,
 } from "../lib/types";
 import { listFiles } from "../lib/tauri";
@@ -98,6 +99,9 @@ interface TabStoreState {
 
   /** Set the layout mode for a tab. */
   setTabLayoutMode: (tabId: string, mode: LayoutMode) => void;
+
+  /** Sort by a column; clicking the active column flips its direction. */
+  setTabSort: (tabId: string, key: SortKey) => void;
 }
 
 /** Generate a unique tab ID. */
@@ -105,12 +109,26 @@ function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Sort items: folders first, then files, alphabetical within each group (case-insensitive). */
-function sortItems(items: DriveItem[]): DriveItem[] {
+/** Default sort direction when a column is first activated. */
+function defaultSortAsc(key: SortKey): boolean {
+  return key === "name";
+}
+
+/** Sort items: folders first, then by the given key and direction.
+ * Name comparison is case-insensitive; missing sizes/dates sort as smallest/oldest. */
+function sortItems(items: DriveItem[], key: SortKey, asc: boolean): DriveItem[] {
+  const dir = asc ? 1 : -1;
   return [...items].sort((a, b) => {
-    if (a.isFolder && !b.isFolder) return -1;
-    if (!a.isFolder && b.isFolder) return 1;
-    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+    let cmp: number;
+    if (key === "size") {
+      cmp = (a.size ?? 0) - (b.size ?? 0);
+    } else if (key === "modified") {
+      cmp = (Date.parse(a.lastModified) || 0) - (Date.parse(b.lastModified) || 0);
+    } else {
+      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    }
+    return cmp * dir;
   });
 }
 
@@ -144,6 +162,8 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
       currentFolderId: "root",
       breadcrumbs: [],
       items: [],
+      sortKey: "name",
+      sortAsc: true,
       layoutMode: "list",
       isLoading: true,
       error: null,
@@ -177,6 +197,8 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
       currentFolderId: "root",
       breadcrumbs: [],
       items: [],
+      sortKey: "name",
+      sortAsc: true,
       layoutMode: "list",
       isLoading: false,
       error: null,
@@ -213,6 +235,8 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
       currentFolderId: "root",
       breadcrumbs: [],
       items: [],
+      sortKey: "name",
+      sortAsc: true,
       layoutMode: "list",
       isLoading: false,
       error: null,
@@ -285,7 +309,7 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
 
     try {
       const rawItems = await listFiles(tab.driveId, folderId, tab.cloudEnv);
-      const sorted = sortItems(rawItems);
+      const sorted = sortItems(rawItems, tab.sortKey ?? "name", tab.sortAsc ?? true);
       const visible = sorted.slice(0, PAGE_SIZE);
       get().updateTabState(tabId, {
         items: visible,
@@ -359,5 +383,17 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
 
   setTabLayoutMode: (tabId, mode) => {
     get().updateTabState(tabId, { layoutMode: mode });
+  },
+
+  setTabSort: (tabId, key) => {
+    const tab = get().tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    // Clicking the active column flips direction; a new column starts at its default.
+    const sortAsc = tab.sortKey === key ? !tab.sortAsc : defaultSortAsc(key);
+    get().updateTabState(tabId, {
+      sortKey: key,
+      sortAsc,
+      items: sortItems(tab.items, key, sortAsc),
+    });
   },
 }));

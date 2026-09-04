@@ -2,15 +2,17 @@
 
 [English](./README.md) | 简体中文
 
-> 基于 Tauri 2、Rust 和 React 的跨平台 OneDrive 与 SharePoint 文件管理客户端。
+> 专注 Microsoft 365 的跨平台文件管理工具，基于 Tauri 2、Rust 和 React。
 
-ShareOneList 是 Microsoft 365 的跨平台文件管理客户端，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），统一访问 OneDrive 和 SharePoint 文档库，同时支持国际版和世纪互联版。
+ShareOneList 是一个专注 Microsoft 365 的文件管理工具。一个应用覆盖**国际版组织账户、国际版个人账户、世纪互联版账户**三种 Microsoft 365，支持 Windows（x64 / arm64）和 macOS（Apple Silicon），浏览 OneDrive 与 SharePoint，并轻松下载和管理 **Teams 会议录像**。
 
 ## 特点
 
-- **双云支持** — 在同一个应用中管理国际版和世纪互联版 Microsoft 365 的文件
+- **三种账户类型，一个应用** — 国际版-组织、国际版-个人、世纪互联版都是一等公民，每种账户类型提供适合它的服务入口：OneDrive、SharePoint、Teams 会议录像
+- **Teams 会议录像** — 聚合你的 OneDrive、SharePoint 站点和 Microsoft Search 中的会议录像，内置播放器直接播放、一键下载；即使下载被策略限制，也可通过内置流式提取保存（详见 [Wiki](https://github.com/ituff/ShareOneList/wiki)）
+- **跨平台** — 同一套代码构建 Windows（x64 / arm64）和 macOS（Apple Silicon）
 - **OneDrive + SharePoint** — 个人 OneDrive、SharePoint 站点文档库、共享文档库一站式浏览
-- **多账户** — 支持添加多个不同云环境的账户
+- **多账户** — 支持添加多个不同云环境的账户，可自定义别名和图标
 - **断点续传** — 下载中断后可恢复，重启应用后仍可继续
 - **批量任务** — 一次发起的批量下载归并为一个任务，显示进度和当前下载速度
 - **文件预览** — 在线预览图片、视频、Markdown 和 Office 文档
@@ -51,14 +53,17 @@ open /Applications/ShareOneList.app
 
 - [x] OneDrive 文件浏览
 - [x] SharePoint 站点与文档库浏览
-- [x] 国际版与世纪互联版支持
-- [x] 多账户管理
+- [x] 国际版-组织 / 国际版-个人 / 世纪互联版三种账户支持
+- [x] Teams 会议录像：聚合、播放、下载（下载受限的录像可用流式提取保存）
+- [x] 多账户管理，支持自定义别名和图标
 - [x] 批量下载归并为一个任务
 - [x] 断点续传，显示进度和下载速度
 - [x] 下载时选择保存路径，并记住上次路径
 - [x] 文件分享与链接生成
 - [x] 文件预览（图片、视频、Markdown、Office Online）
 - [x] 图片 / 视频缩略图
+- [x] 文件列表可按名称 / 大小 / 修改日期升降序排序
+- [x] 资源管理器式面包屑，长路径自动折叠
 - [x] 书签
 - [x] 重命名 / 删除 / 属性查看
 - [x] 转换为 PDF

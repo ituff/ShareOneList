@@ -13,7 +13,12 @@
 - [x] 7. MainContent nav 步骤接线与双击→openPreviewTab 打通；DriveHubPage 第四入口卡片
 - [x] 8. i18n en-US / zh-CN 增加 `recordings.*` 与 `driveHub.meetingRecordings`
 - [x] 9. `cargo test` 与 `npm run build` 通过
-- [ ] 10. 真机手工验收：global + 世纪互联账户、含频道会议录制站点（需要真实账号环境）
+- [x] 10. 真机手工验收：国际版组织账户完整走通（入口、预览、流式下载）；世纪互联入口置灰待顺手补验
+
+## 2026-09-04 重设计（已完成）
+
+- [x] 11. 更名「Teams 录像」，列表重构为两个来源：本地化 Recordings 文件夹（本人）+ QuerySearch 分享 mp4（分享，排除自身 drive）
+- [x] 12. 移除 SharePoint 站点枚举与下载按钮；排序改为修改时间倒序；来源列显示本人/分享
 
 ## 已知限制（后续迭代候选）
 
