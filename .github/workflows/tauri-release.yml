@@ -101,6 +101,28 @@ jobs:
           Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
 
+      - name: Drop language suffix from MSI asset names
+        if: matrix.label == 'windows-x64' || matrix.label == 'windows-arm64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # WiX names MSIs with the install language (e.g. ..._x64_en-US.msi).
+          # We ship a single-language MSI, so re-upload it without the suffix.
+          $arch = if ($matrix.label -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $assets = gh release view "${{ github.ref_name }}" --json assets --jq ".assets[].name"
+          foreach ($asset in $assets) {
+            if ($asset -like "ShareOneList_*_${arch}_en-US.msi") {
+              $newName = $asset -replace '_en-US\.msi$', '.msi'
+              $tmp = Join-Path $env:RUNNER_TEMP $newName
+              gh release download "${{ github.ref_name }}" --pattern $asset --output $tmp --clobber
+              gh release delete-asset "${{ github.ref_name }}" $asset --yes
+              gh release upload "${{ github.ref_name }}" $tmp --clobber
+              Remove-Item -LiteralPath $tmp -Force
+              Write-Output "Renamed $asset -> $newName"
+            }
+          }
+
       - name: Remove macOS updater archive from release assets
         if: matrix.label == 'macos-aarch64'
         shell: pwsh
