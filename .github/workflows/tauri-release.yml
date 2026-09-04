@@ -129,21 +129,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+          # Hosted runners refuse `hdiutil attach` (Operation not permitted),
+          # so the dmg is rebuilt from a staging folder instead of patched:
+          # app + Applications symlink + Gatekeeper helper files.
+          app_dir="tauri-app/src-tauri/target/${{ matrix.target }}/release/bundle/macos/ShareOneList.app"
           dmg_dir="tauri-app/src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
           dmg_file="$dmg_dir/$(ls "$dmg_dir" | grep '\.dmg$' | head -1)"
-          echo "Patching $dmg_file"
+          echo "Rebuilding $dmg_file"
 
-          mount_dir=$(hdiutil attach "$dmg_file" -readwrite -noverify -nobrowse | tail -1 | cut -f3)
-          echo "Mounted at $mount_dir"
-          cp "scripts/fix-macos-gatekeeper.command" "$mount_dir/"
-          cp "scripts/README-首次启动必读-macOS.txt" "$mount_dir/"
-          chmod +x "$mount_dir/fix-macos-gatekeeper.command"
-          hdiutil detach "$mount_dir"
+          staging="$RUNNER_TEMP/dmg-staging"
+          rm -rf "$staging"
+          mkdir -p "$staging/ShareOneList"
+          cp -R "$app_dir" "$staging/ShareOneList.app"
+          ln -s /Applications "$staging/Applications"
+          cp "scripts/fix-macos-gatekeeper.command" "$staging/ShareOneList/"
+          cp "scripts/README-首次启动必读-macOS.txt" "$staging/ShareOneList/"
+          chmod +x "$staging/ShareOneList/fix-macos-gatekeeper.command"
 
-          # Re-compress and replace the uploaded release asset.
-          hdiutil convert "$dmg_file" -format UDZO -o "$dmg_file.patched"
-          rm "$dmg_file"
-          mv "$dmg_file.patched.dmg" "$dmg_file"
+          hdiutil create -volname "ShareOneList" -srcfolder "$staging" -ov -format UDZO -o "$dmg_file"
           gh release upload "${{ github.ref_name }}" "$dmg_file" --clobber
 
       - name: Remove macOS updater archive from release assets
