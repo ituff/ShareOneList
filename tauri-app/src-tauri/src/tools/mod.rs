@@ -30,8 +30,12 @@ pub mod commands {
     }
 
     /// Download and open the installer/archive for the specified version.
+    /// Emits `update-download-progress` events while downloading.
     #[tauri::command]
-    pub async fn perform_update(version: String) -> Result<(), AppError> {
-        super::updater::perform_update(&version).await
+    pub async fn perform_update(
+        version: String,
+        app_handle: tauri::AppHandle,
+    ) -> Result<(), AppError> {
+        super::updater::perform_update(&version, app_handle).await
     }
 }

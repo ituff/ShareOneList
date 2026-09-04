@@ -3,6 +3,8 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { MainContent } from "./components/layout/MainContent";
 import { ToastContainer } from "./components/ui/Toast";
 import { ReloginDialog } from "./components/accounts/ReloginDialog";
+import { NotificationBell } from "./components/layout/NotificationBell";
+import { UpdateBubble } from "./components/layout/UpdateBubble";
 import { useWindowState } from "./hooks/useWindowState";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -60,6 +62,8 @@ function App() {
       </div>
       <ToastContainer />
       <ReloginDialog />
+      <NotificationBell />
+      <UpdateBubble />
     </Suspense>
   );
 }

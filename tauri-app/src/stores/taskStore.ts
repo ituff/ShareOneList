@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import type { CloudEnvironment, ProgressEvent, TaskStatus } from "../lib/types";
 import { getDownloadTasks } from "../lib/tauri";
+import { useNotificationStore } from "./notificationStore";
+import i18n from "../i18n";
 
 /** A single transfer task entry displayed in the UI. */
 export interface TaskEntry {
@@ -183,5 +185,22 @@ export async function initTaskListener() {
     };
 
     useTaskStore.getState().updateTask(normalized);
+
+    // Surface finished and failed transfers in the notification center.
+    if (normalized.status === "completed") {
+      useNotificationStore.getState().push({
+        kind: "download",
+        title: i18n.t("notifications.downloadComplete"),
+        detail: normalized.fileName,
+      });
+    } else if (normalized.status === "failed") {
+      useNotificationStore.getState().push({
+        kind: "download-error",
+        title: i18n.t("notifications.downloadFailed"),
+        detail: normalized.error
+          ? `${normalized.fileName}: ${normalized.error}`
+          : normalized.fileName,
+      });
+    }
   });
 }

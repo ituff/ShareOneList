@@ -1,11 +1,33 @@
+use std::io::Write;
+use std::time::Duration;
+
 use crate::errors::AppError;
 use crate::models::UpdateInfo;
 use reqwest::Client;
 use serde::Deserialize;
+use tauri::Emitter;
 
 const GITHUB_RELEASES_URL: &str =
     "https://api.github.com/repos/ituff/ShareOneList/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Download source prefixes tried in order. The empty prefix is GitHub direct;
+/// the others are China-friendly GitHub acceleration mirrors. Prefixes must
+/// simply be prepended to the full release download URL.
+const DOWNLOAD_SOURCE_PREFIXES: &[&str] = &[
+    "",
+    "https://ghfast.top/",
+    "https://gh-proxy.com/",
+    "https://github.moeyy.xyz/",
+];
+
+/// Progress event emitted while the update installer downloads.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateDownloadProgress {
+    transferred: u64,
+    total: u64,
+}
 
 #[derive(Deserialize)]
 struct GitHubRelease {
@@ -135,28 +157,7 @@ fn select_platform_asset_with_preferences<'a>(
 pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
     let client = Client::new();
 
-    let response = client
-        .get(GITHUB_RELEASES_URL)
-        .header("User-Agent", "ShareOneList-Updater")
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| AppError::Network {
-            message: format!("Failed to reach GitHub: {}", e),
-            retryable: true,
-        })?;
-
-    if !response.status().is_success() {
-        return Err(AppError::Network {
-            message: format!("GitHub API returned status {}", response.status()),
-            retryable: true,
-        });
-    }
-
-    let release: GitHubRelease = response.json().await.map_err(|e| AppError::Network {
-        message: format!("Failed to parse release data: {}", e),
-        retryable: true,
-    })?;
+    let release = fetch_latest_release(&client).await?;
 
     let remote_version = release.tag_name.trim_start_matches('v').to_string();
 
@@ -176,11 +177,8 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
     }))
 }
 
-/// Download the update asset for the given version and open the installer.
-pub async fn perform_update(version: &str) -> Result<(), AppError> {
-    let client = Client::new();
-
-    // Fetch release info again to get the download URL for the requested version
+/// Fetch the latest release metadata from GitHub.
+async fn fetch_latest_release(client: &Client) -> Result<GitHubRelease, AppError> {
     let response = client
         .get(GITHUB_RELEASES_URL)
         .header("User-Agent", "ShareOneList-Updater")
@@ -199,10 +197,31 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
         });
     }
 
-    let release: GitHubRelease = response.json().await.map_err(|e| AppError::Network {
-        message: format!("Failed to parse release data: {}", e),
-        retryable: true,
-    })?;
+    response.json::<GitHubRelease>().await.map_err(|e| {
+        AppError::Network {
+            message: format!("Failed to parse release data: {}", e),
+            retryable: true,
+        }
+    })
+}
+
+/// HEAD-probe a download source; mirrors are often down, so dead sources are
+/// skipped quickly instead of timing out during the real download.
+async fn source_reachable(client: &Client, url: &str) -> bool {
+    matches!(
+        client.head(url).send().await,
+        Ok(response) if response.status().is_success()
+    )
+}
+
+/// Download the update asset for the given version and open the installer.
+/// Download sources are tried in order (GitHub direct first, then China
+/// acceleration mirrors); progress is emitted via the
+/// `update-download-progress` event.
+pub async fn perform_update(version: &str, app_handle: tauri::AppHandle) -> Result<(), AppError> {
+    let client = Client::new();
+
+    let release = fetch_latest_release(&client).await?;
 
     let release_version = release.tag_name.trim_start_matches('v');
     if release_version != version.trim_start_matches('v') {
@@ -220,40 +239,118 @@ pub async fn perform_update(version: &str) -> Result<(), AppError> {
         retryable: false,
     })?;
 
-    // Download the asset to a temp file
-    let download_response = client
-        .get(&asset.browser_download_url)
-        .header("User-Agent", "ShareOneList-Updater")
-        .send()
+    // Build the ordered source list: direct GitHub first, then mirrors.
+    let sources: Vec<String> = DOWNLOAD_SOURCE_PREFIXES
+        .iter()
+        .map(|prefix| format!("{}{}", prefix, asset.browser_download_url))
+        .collect();
+
+    // A client with a short timeout only for probing sources.
+    let probe_client = Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| AppError::Network {
+            message: format!("Failed to build HTTP client: {}", e),
+            retryable: true,
+        })?;
+    // A generous timeout for the actual (potentially large) download.
+    let download_client = Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(1800))
+        .build()
+        .map_err(|e| AppError::Network {
+            message: format!("Failed to build HTTP client: {}", e),
+            retryable: true,
+        })?;
+
+    // Try each reachable source in order until one starts successfully.
+    let mut response = None;
+    let mut last_error: Option<AppError> = None;
+    for url in &sources {
+        if !source_reachable(&probe_client, url).await {
+            eprintln!("[updater] source unreachable, skipping: {}", url);
+            continue;
+        }
+        match download_client
+            .get(url)
+            .header("User-Agent", "ShareOneList-Updater")
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => {
+                response = Some(resp);
+                break;
+            }
+            Ok(resp) => {
+                last_error = Some(AppError::Network {
+                    message: format!("Download returned status {}", resp.status()),
+                    retryable: true,
+                });
+            }
+            Err(e) => {
+                last_error = Some(AppError::Network {
+                    message: format!("Download failed: {}", e),
+                    retryable: true,
+                });
+            }
+        }
+    }
+
+    let mut response = response.ok_or_else(|| {
+        last_error.unwrap_or(AppError::Network {
+            message: "No download source available".to_string(),
+            retryable: false,
+        })
+    })?;
+
+    let total = response.content_length().unwrap_or(0);
+
+    // Save to temp directory, streaming chunks and emitting progress.
+    let temp_dir = std::env::temp_dir();
+    let file_path = temp_dir.join(&asset.name);
+    let mut file = std::fs::File::create(&file_path).map_err(|e| AppError::FileSystem {
+        message: format!("Failed to save update file: {}", e),
+        path: file_path.display().to_string(),
+    })?;
+
+    let mut transferred: u64 = 0;
+    let mut last_emitted: u64 = 0;
+    const PROGRESS_STEP: u64 = 512 * 1024;
+
+    while let Some(chunk) = response
+        .chunk()
         .await
         .map_err(|e| AppError::Network {
             message: format!("Download failed: {}", e),
             retryable: true,
+        })?
+    {
+        file.write_all(&chunk).map_err(|e| AppError::FileSystem {
+            message: format!("Failed to save update file: {}", e),
+            path: file_path.display().to_string(),
         })?;
-
-    if !download_response.status().is_success() {
-        return Err(AppError::Network {
-            message: format!("Download returned status {}", download_response.status()),
-            retryable: true,
-        });
+        transferred += chunk.len() as u64;
+        if transferred - last_emitted >= PROGRESS_STEP {
+            last_emitted = transferred;
+            let _ = app_handle.emit(
+                "update-download-progress",
+                UpdateDownloadProgress {
+                    transferred,
+                    total,
+                },
+            );
+        }
     }
+    file.flush().ok();
+    drop(file);
 
-    let bytes = download_response
-        .bytes()
-        .await
-        .map_err(|e| AppError::Network {
-            message: format!("Failed to read download: {}", e),
-            retryable: true,
-        })?;
-
-    // Save to temp directory
-    let temp_dir = std::env::temp_dir();
-    let file_path = temp_dir.join(&asset.name);
-
-    std::fs::write(&file_path, &bytes).map_err(|e| AppError::FileSystem {
-        message: format!("Failed to save update file: {}", e),
-        path: file_path.display().to_string(),
-    })?;
+    let _ = app_handle.emit(
+        "update-download-progress",
+        UpdateDownloadProgress {
+            transferred,
+            total,
+        },
+    );
 
     // Open the downloaded file (runs installer / opens archive)
     open::that(&file_path).map_err(|e| AppError::FileSystem {
