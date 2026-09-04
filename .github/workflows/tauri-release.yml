@@ -81,7 +81,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
 
       - name: Package legacy upgrade zip
-        if: matrix.label == 'windows-x64'
+        if: matrix.label == 'windows-x64' || matrix.label == 'windows-arm64'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,9 +96,27 @@ jobs:
           Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $staging | Out-Null
           Copy-Item -LiteralPath $exe -Destination (Join-Path $staging "ShareOneList.exe")
-          $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-x64.zip"
+          $arch = if ($matrix.label -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-$arch.zip"
           Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
+
+      - name: Remove macOS updater archive from release assets
+        if: matrix.label == 'macos-aarch64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Release format is dmg-only for macOS; drop the .app.tar.gz updater
+          # artifact if the bundler produced one (the in-app updater downloads
+          # the dmg directly).
+          $assets = gh release view "${{ github.ref_name }}" --json assets --jq ".assets[].name"
+          foreach ($asset in $assets) {
+            if ($asset -like "*.app.tar.gz" -or $asset -like "*.app.tar.gz.sig") {
+              gh release delete-asset "${{ github.ref_name }}" $asset --yes
+              Write-Output "Deleted asset: $asset"
+            }
+          }
 
   publish-release:
     needs: [create-release, build-and-upload]
