@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Database, RefreshCw, AlertCircle } from "lucide-react";
-import { getSiteDrives, getSharedDrives } from "../../lib/tauri";
+import { getSiteDrives } from "../../lib/tauri";
 import { getErrorMessage } from "../../lib/errors";
 import type { CloudEnvironment, Drive } from "../../lib/types";
 
 interface DriveListProps {
-  mode: "sharepoint" | "shared";
-  siteId?: string;
+  siteId: string;
   siteName?: string;
   cloudEnv: CloudEnvironment;
   homeAccountId: string;
@@ -25,11 +24,10 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * Lists document libraries (drives) for a SharePoint site or shared drives.
+ * Lists document libraries (drives) for a SharePoint site.
  * Handles loading, empty, and error states with retry support.
  */
 export function DriveList({
-  mode,
   siteId,
   siteName,
   cloudEnv,
@@ -46,13 +44,8 @@ export function DriveList({
     setIsLoading(true);
     setError(null);
     try {
-      if (mode === "sharepoint" && siteId) {
-        const result = await getSiteDrives(siteId, cloudEnv, homeAccountId);
-        setDrives(result);
-      } else if (mode === "shared") {
-        const result = await getSharedDrives(cloudEnv, homeAccountId);
-        setDrives(result);
-      }
+      const result = await getSiteDrives(siteId, cloudEnv, homeAccountId);
+      setDrives(result);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -62,22 +55,7 @@ export function DriveList({
 
   useEffect(() => {
     fetchDrives();
-  }, [mode, siteId, homeAccountId]);
-
-  const title =
-    mode === "sharepoint" && siteName
-      ? siteName
-      : t("driveHub.sharedWithMe");
-
-  const emptyMessage =
-    mode === "sharepoint"
-      ? t("driveHub.noSharePoint")
-      : t("driveHub.noSharedDrives");
-
-  const emptyDescription =
-    mode === "sharepoint"
-      ? t("driveHub.noSharePointDesc")
-      : t("driveHub.noSharedDrivesDesc");
+  }, [siteId, homeAccountId]);
 
   return (
     <div className="space-y-4">
@@ -91,7 +69,7 @@ export function DriveList({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h3 className="text-lg font-semibold text-foreground">
-          {title}
+          {siteName ?? t("driveHub.sharePoint")}
         </h3>
       </div>
 
@@ -122,10 +100,10 @@ export function DriveList({
         <div className="rounded-lg border border-dashed border-border p-8 text-center space-y-2">
           <Database className="h-8 w-8 text-muted-foreground mx-auto" />
           <p className="text-sm font-medium text-foreground">
-            {emptyMessage}
+            {t("driveHub.noSharePoint")}
           </p>
           <p className="text-xs text-muted-foreground">
-            {emptyDescription}
+            {t("driveHub.noSharePointDesc")}
           </p>
         </div>
       )}

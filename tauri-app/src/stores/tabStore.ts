@@ -48,6 +48,16 @@ interface TabStoreState {
     homeAccountId: string
   ) => void;
 
+  /**
+   * Open the meeting-recordings list tab for an account.
+   * Reuses the existing tab for the same account instead of duplicating.
+   */
+  openRecordingsTab: (
+    homeAccountId: string,
+    cloudEnv: CloudEnvironment,
+    title: string
+  ) => void;
+
   /** Open a new tab at a specific folder. */
   openTabAtFolder: (
     driveId: string,
@@ -164,6 +174,42 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
       cloudEnv,
       homeAccountId,
       previewItem: item,
+      currentFolderId: "root",
+      breadcrumbs: [],
+      items: [],
+      layoutMode: "list",
+      isLoading: false,
+      error: null,
+    };
+
+    set({
+      tabs: [...tabs, newTab],
+      activeTabId: newTab.id,
+    });
+  },
+
+  openRecordingsTab: (homeAccountId, cloudEnv, title) => {
+    const { tabs } = get();
+
+    // One recordings tab per account.
+    const existing = tabs.find(
+      (t) => t.kind === "recordings" && t.homeAccountId === homeAccountId
+    );
+    if (existing) {
+      set({ activeTabId: existing.id });
+      return;
+    }
+    if (tabs.length >= MAX_TABS) {
+      return;
+    }
+
+    const newTab: TabState = {
+      id: generateTabId(),
+      kind: "recordings",
+      driveId: "",
+      driveName: title,
+      cloudEnv,
+      homeAccountId,
       currentFolderId: "root",
       breadcrumbs: [],
       items: [],

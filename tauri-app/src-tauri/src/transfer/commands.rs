@@ -9,6 +9,7 @@ use crate::auth::AuthModule;
 use crate::errors::AppError;
 use crate::graph::GraphClient;
 use crate::transfer::download::{BatchInfo, BatchSnapshot, DownloadEngine, DownloadParams};
+use crate::transfer::stream_bridge::{start_upload_server, StreamDownloadChannel};
 use crate::transfer::upload::{upload_folder_recursive, UploadEngine, UploadParams};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -551,4 +552,29 @@ pub async fn cancel_upload(
 ) -> Result<(), AppError> {
     let mut engine = upload_engine.lock().await;
     engine.cancel_task(&task_id)
+}
+
+/// Opens a loopback channel that receives the finished recording from the
+/// in-webview stream pipeline (see `src/stream_boot.js`).
+///
+/// Used when tenant policy blocks Graph downloads (`@microsoft.graph.downloadUrl`
+/// withheld) but the preview player can still stream the recording. The webview
+/// captures the player's own DASH manifest and encrypted segments, muxes them
+/// into a flat MP4, and POSTs the bytes to the returned channel.
+#[tauri::command]
+pub async fn begin_stream_download(
+    save_path: String,
+) -> Result<StreamDownloadChannel, AppError> {
+    if save_path.trim().is_empty() {
+        return Err(AppError::Validation {
+            message: "Save path must not be empty".to_string(),
+            field: "save_path".to_string(),
+        });
+    }
+    start_upload_server(PathBuf::from(save_path))
+        .await
+        .map_err(|e| AppError::Transfer {
+            message: e,
+            task_id: String::new(),
+        })
 }
