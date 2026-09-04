@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use futures::StreamExt;
 use serde::Deserialize;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -6,7 +10,9 @@ use crate::auth::cloud_config::CloudEnvironment;
 use crate::auth::AuthModule;
 use crate::errors::AppError;
 use crate::graph::GraphClient;
-use crate::models::{Drive, DriveItem, DriveQuota, ShareOptions, Site};
+use crate::models::{
+    Drive, DriveItem, DriveQuota, MeetingRecording, RecordingSource, ShareOptions, Site,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,6 +43,7 @@ struct GraphCollection<T> {
 
 /// Raw drive item as returned by Graph API (different field names from our model).
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct RawDriveItem {
     id: Option<String>,
     name: Option<String>,
@@ -59,9 +66,14 @@ struct RawDriveItem {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct RawRemoteItem {
+    id: Option<String>,
+    name: Option<String>,
     folder: Option<serde_json::Value>,
     package: Option<serde_json::Value>,
+    #[serde(rename = "parentReference")]
+    parent_reference: Option<RawParentReference>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +82,7 @@ struct RawFile {
     mime_type: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct RawParentReference {
     #[serde(rename = "driveId")]
     drive_id: Option<String>,
@@ -81,30 +93,62 @@ struct RawParentReference {
 
 impl From<RawDriveItem> for DriveItem {
     fn from(raw: RawDriveItem) -> Self {
+        // sharedWithMe returns remote items (files shared from other people's
+        // drives) with their real identity inside `remoteItem`; the top-level
+        // wrapper carries only transient sharing metadata.  Fall back to the
+        // remote payload when the top-level parentReference is missing (the
+        // real location lives on the remote drive, not the shim).
+        let is_remote = raw.parent_reference.is_none() && raw.remote_item.is_some();
+
+        let (id, name, parent_ref, size, download_url, mime_type, web_url, is_folder, created) =
+            if is_remote {
+                let ri = raw.remote_item.as_ref().unwrap();
+                (
+                    ri.id.clone().unwrap_or_default(),
+                    ri.name.clone().unwrap_or_default(),
+                    ri.parent_reference.clone().map(|pr| crate::models::ParentReference {
+                        drive_id: pr.drive_id.unwrap_or_default(),
+                        id: pr.id.unwrap_or_default(),
+                        path: pr.path,
+                        name: pr.name,
+                    }),
+                    raw.size,
+                    raw.download_url,
+                    raw.file.and_then(|f| f.mime_type),
+                    raw.web_url,
+                    raw.folder.is_some() || ri.folder.is_some() || ri.package.is_some(),
+                    raw.created_date_time,
+                )
+            } else {
+                (
+                    raw.id.unwrap_or_default(),
+                    raw.name.unwrap_or_default(),
+                    raw.parent_reference.map(|pr| crate::models::ParentReference {
+                        drive_id: pr.drive_id.unwrap_or_default(),
+                        id: pr.id.unwrap_or_default(),
+                        path: pr.path,
+                        name: pr.name,
+                    }),
+                    raw.size,
+                    raw.download_url,
+                    raw.file.and_then(|f| f.mime_type),
+                    raw.web_url,
+                    raw.folder.is_some() || raw.package.is_some(),
+                    raw.created_date_time,
+                )
+            };
+
         DriveItem {
-            id: raw.id.unwrap_or_default(),
-            name: raw.name.unwrap_or_default(),
-            size: raw.size,
+            id,
+            name,
+            size,
             last_modified: raw.last_modified_date_time.unwrap_or_default(),
-            is_folder: raw.folder.is_some()
-                || raw.package.is_some()
-                || raw
-                    .remote_item
-                    .as_ref()
-                    .and_then(|r| r.folder.as_ref().or(r.package.as_ref()))
-                    .is_some(),
-            mime_type: raw.file.and_then(|f| f.mime_type),
-            web_url: raw.web_url,
-            parent_reference: raw
-                .parent_reference
-                .map(|pr| crate::models::ParentReference {
-                    drive_id: pr.drive_id.unwrap_or_default(),
-                    id: pr.id.unwrap_or_default(),
-                    path: pr.path,
-                    name: pr.name,
-                }),
-            download_url: raw.download_url,
-            created_date_time: raw.created_date_time,
+            is_folder,
+            mime_type,
+            web_url,
+            parent_reference: parent_ref,
+            download_url,
+            created_date_time: created,
         }
     }
 }
@@ -292,6 +336,139 @@ struct DirectoryObject {
     #[serde(rename = "@odata.type")]
     odata_type: Option<String>,
     id: Option<String>,
+}
+
+/// Whether a Graph parent path (e.g. `/drive/root:/Recordings/sub`) points
+/// into a recordings folder, matching localized aliases case-insensitively.
+#[allow(dead_code)]
+fn path_points_to_recordings_folder(path: Option<&String>) -> bool {
+    let Some(path) = path else {
+        return false;
+    };
+    path.split('/').any(|segment| {
+        !segment.is_empty()
+            && RECORDINGS_FOLDER_ALIASES
+                .iter()
+                .any(|alias| segment.eq_ignore_ascii_case(alias))
+    })
+}
+
+/// Collect meeting recordings via POST /search/query. Microsoft Search only
+/// returns items the signed-in user can access, mirroring what Stream web shows.
+/// This replaces the deprecated /me/drive/sharedWithMe endpoint which returns
+/// far fewer items than the OneDrive web UI.
+const RECORDING_SEARCH_QUERIES: [&str; 2] = ["\"teams meeting recording\"", "\"recording\""];
+const SEARCH_PAGE_SIZE: usize = 50;
+const SEARCH_MAX_PAGES_PER_QUERY: usize = 2;
+
+async fn collect_search_recordings(client: &GraphClient, token: &str) -> Vec<MeetingRecording> {
+    let base = client.base_url();
+    let url = format!("{}/search/query", base);
+    let mut recordings = Vec::new();
+
+    for query_text in RECORDING_SEARCH_QUERIES {
+        let mut from = 0usize;
+        for _page in 0..SEARCH_MAX_PAGES_PER_QUERY {
+            let body = serde_json::json!({
+                "requests": [{
+                    "entityTypes": ["driveItem"],
+                    "query": { "queryString": query_text },
+                    "from": from,
+                    "size": SEARCH_PAGE_SIZE
+                }]
+            });
+
+            let response = match client
+                .request_with_retry(token, |http, tkn| http.post(&url).bearer_auth(tkn).json(&body))
+                .await
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!(
+                        "[recordings] Search source query '{}' failed: {}",
+                        query_text, e
+                    );
+                    return recordings;
+                }
+            };
+
+            let json: serde_json::Value =
+                match response.json().await {
+                    Ok(json) => json,
+                    Err(e) => {
+                        eprintln!(
+                            "[recordings] Search source query '{}' unparseable: {}",
+                            query_text, e
+                        );
+                        return recordings;
+                    }
+                };
+
+            let hits = json["value"][0]["hitsContainers"][0]["hits"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+
+            let hit_count = hits.len();
+            for hit in &hits {
+                let resource = &hit["resource"];
+                let Some(name) = resource["name"].as_str() else {
+                    continue;
+                };
+                if !is_recording_video_name(name) {
+                    continue;
+                }
+
+                let id = resource["id"].as_str().unwrap_or_default().to_string();
+                if id.is_empty() {
+                    continue;
+                }
+                let drive_id = resource["parentReference"]["driveId"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                if drive_id.is_empty() {
+                    continue;
+                }
+
+                recordings.push(MeetingRecording {
+                    drive_id,
+                    item: DriveItem {
+                        id,
+                        name: name.to_string(),
+                        size: resource["size"].as_u64(),
+                        last_modified: resource["lastModifiedDateTime"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                        is_folder: false,
+                        mime_type: resource["file"]["mimeType"]
+                            .as_str()
+                            .map(|s| s.to_string()),
+                        web_url: resource["webUrl"].as_str().map(|s| s.to_string()),
+                        parent_reference: None,
+                        download_url: None,
+                        created_date_time: resource["createdDateTime"]
+                            .as_str()
+                            .map(|s| s.to_string()),
+                    },
+                    source_type: RecordingSource::Search,
+                    source_name: String::new(),
+                });
+            }
+
+            if hit_count < SEARCH_PAGE_SIZE {
+                break;
+            }
+            from += SEARCH_PAGE_SIZE;
+        }
+    }
+
+    eprintln!(
+        "[recordings] Search source yielded {} recording(s)",
+        recordings.len()
+    );
+    recordings
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -877,21 +1054,14 @@ pub async fn get_text_content(
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
-/// Get SharePoint sites. For Global uses /sites?search=*, for China uses memberOf group discovery.
-#[tauri::command]
-pub async fn get_sharepoint_sites(
-    cloud_env: String,
-    home_account_id: String,
-    auth_module: State<'_, Mutex<AuthModule>>,
-) -> Result<Vec<Site>, AppError> {
-    let env = parse_cloud_env(&cloud_env)?;
-    let token = {
-        let mut auth = auth_module.lock().await;
-        auth.get_token_for_account(env.clone(), &home_account_id)
-            .await?
-    };
-
-    let client = GraphClient::new(env.clone());
+/// Discover SharePoint sites visible to the account. Combines followed sites,
+/// wildcard search, China M365 group discovery, and the tenant root fallback.
+/// Failures of individual sources are ignored; duplicates are removed.
+async fn discover_sites(
+    client: &GraphClient,
+    env: CloudEnvironment,
+    token: &str,
+) -> Vec<Site> {
     let base = client.base_url();
     let mut sites: Vec<Site> = Vec::new();
 
@@ -901,7 +1071,7 @@ pub async fn get_sharepoint_sites(
         format!("{}/sites?search=*&$select=id,displayName,webUrl", base),
     ];
     for url in discovery_urls {
-        if let Ok(found) = fetch_site_collection(&client, &token, &url).await {
+        if let Ok(found) = fetch_site_collection(client, token, &url).await {
             for site in found {
                 push_unique_site(&mut sites, site);
             }
@@ -912,7 +1082,7 @@ pub async fn get_sharepoint_sites(
     if env == CloudEnvironment::China {
         let member_url = format!("{}/me/memberOf", base);
         if let Ok(response) = client
-            .request_with_retry(&token, |http, tkn| http.get(&member_url).bearer_auth(tkn))
+            .request_with_retry(token, |http, tkn| http.get(&member_url).bearer_auth(tkn))
             .await
         {
             if let Ok(members) = response.json::<GraphCollection<DirectoryObject>>().await {
@@ -931,7 +1101,7 @@ pub async fn get_sharepoint_sites(
                 for group_id in group_ids {
                     let site_url = format!("{}/groups/{}/sites/root", base, group_id);
                     if let Ok(site_response) = client
-                        .request_with_retry(&token, |http, tkn| {
+                        .request_with_retry(token, |http, tkn| {
                             http.get(&site_url).bearer_auth(tkn)
                         })
                         .await
@@ -949,7 +1119,7 @@ pub async fn get_sharepoint_sites(
     if sites.is_empty() {
         let root_url = format!("{}/sites/root?$select=id,displayName,webUrl", base);
         if let Ok(response) = client
-            .request_with_retry(&token, |http, tkn| http.get(&root_url).bearer_auth(tkn))
+            .request_with_retry(token, |http, tkn| http.get(&root_url).bearer_auth(tkn))
             .await
         {
             if let Ok(raw_site) = response.json::<RawSite>().await {
@@ -958,7 +1128,25 @@ pub async fn get_sharepoint_sites(
         }
     }
 
-    Ok(sites)
+    sites
+}
+
+/// Get SharePoint sites for the service picker page.
+#[tauri::command]
+pub async fn get_sharepoint_sites(
+    cloud_env: String,
+    home_account_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+) -> Result<Vec<Site>, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+
+    let client = GraphClient::new(env.clone());
+    Ok(discover_sites(&client, env, &token).await)
 }
 
 /// Get drives for a specific SharePoint site.
@@ -992,39 +1180,476 @@ pub async fn get_site_drives(
     Ok(collection.value.into_iter().map(Drive::from).collect())
 }
 
-/// Get drives shared with the current user.
+// ─────────────────────────────────────────────────────────────────────────────
+// Meeting Recordings
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Upper bounds that keep cross-site aggregation bounded on large tenants.
+const MAX_RECORDING_SITES: usize = 100;
+const MAX_DRIVES_PER_SITE: usize = 5;
+const MAX_RECORDING_CONTAINERS_PER_DRIVE: usize = 10;
+const RECORDING_SITE_CONCURRENCY: usize = 6;
+/// Cap for children pages fetched inside a single `Recordings` container.
+const MAX_CHILDREN_PER_CONTAINER: usize = 500;
+
+/// File extensions treated as Teams meeting recordings.
+const RECORDING_VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv"];
+
+/// Folder-name aliases accepted when locating the OneDrive recordings folder,
+/// covering tenants where the auto-created folder comes back localized.
+const RECORDINGS_FOLDER_ALIASES: [&str; 3] = ["Recordings", "会议录制", "录制"];
+
+/// Whether a file name looks like a meeting recording (video extension).
+fn is_recording_video_name(name: &str) -> bool {
+    match name.rsplit_once('.') {
+        Some((_, ext)) => RECORDING_VIDEO_EXTENSIONS
+            .iter()
+            .any(|candidate| ext.eq_ignore_ascii_case(candidate)),
+        None => false,
+    }
+}
+
+/// Epoch seconds used to order recordings; unparseable dates sink to the bottom.
+fn recording_epoch(recording: &MeetingRecording) -> i64 {
+    let candidate = recording
+        .item
+        .created_date_time
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&recording.item.last_modified);
+    DateTime::parse_from_rfc3339(candidate)
+        .ok()
+        .map(|dt| dt.with_timezone(&Utc).timestamp())
+        .unwrap_or(i64::MIN)
+}
+
+/// Sort recordings newest first (createdDateTime), name ascending as tiebreak.
+fn sort_recordings_desc(recordings: &mut [MeetingRecording]) {
+    recordings.sort_by(|a, b| {
+        recording_epoch(b)
+            .cmp(&recording_epoch(a))
+            .then_with(|| a.item.name.to_lowercase().cmp(&b.item.name.to_lowercase()))
+    });
+}
+
+/// List all file children behind a Graph children/search URL with pagination.
+/// When `include_folders` is set, folder items are returned as well.
+async fn fetch_all_children(
+    client: &GraphClient,
+    token: &str,
+    start_url: String,
+    max_items: usize,
+    include_folders: bool,
+) -> Result<Vec<DriveItem>, AppError> {
+    let mut items: Vec<DriveItem> = Vec::new();
+    let mut url = start_url;
+
+    loop {
+        let current_url = url.clone();
+        let response = client
+            .request_with_retry(token, |http, tkn| http.get(&current_url).bearer_auth(tkn))
+            .await?;
+
+        let collection: GraphCollection<RawDriveItem> =
+            response.json().await.map_err(|e| AppError::GraphApi {
+                message: format!("Failed to parse response: {}", e),
+                status_code: 0,
+            })?;
+
+        for raw in collection.value {
+            let item = DriveItem::from(raw);
+            if !item.id.is_empty() && (include_folders || !item.is_folder) {
+                items.push(item);
+                if items.len() >= max_items {
+                    return Ok(items);
+                }
+            }
+        }
+
+        match collection.next_link {
+            Some(next) => url = next,
+            None => break,
+        }
+    }
+
+    Ok(items)
+}
+
+/// Locate the OneDrive recordings folder by probing common localized names in
+/// the drive root; returns the children of the first match.
+async fn locate_localized_recordings_children(
+    client: &GraphClient,
+    token: &str,
+    base: &str,
+) -> Result<Vec<DriveItem>, AppError> {
+    let root_url = format!(
+        "{}/me/drive/root/children?$top=200&$select={}",
+        base, DRIVE_ITEM_SELECT
+    );
+    let root_entries =
+        fetch_all_children(client, token, root_url, 200, true).await?;
+
+    let folder = root_entries.into_iter().find(|item| {
+        item.is_folder
+            && RECORDINGS_FOLDER_ALIASES
+                .iter()
+                .any(|alias| item.name.eq_ignore_ascii_case(alias))
+    });
+
+    let Some(folder) = folder else {
+        return Err(AppError::GraphApi {
+            message: "No recordings folder found in OneDrive root".to_string(),
+            status_code: 404,
+        });
+    };
+
+    let children_url = format!(
+        "{}/me/drive/items/{}/children?$top=200&$select={}",
+        base, folder.id, DRIVE_ITEM_SELECT
+    );
+    fetch_all_children(client, token, children_url, MAX_CHILDREN_PER_CONTAINER, false).await
+}
+
+fn children_into_recordings(
+    items: Vec<DriveItem>,
+    drive_id: &str,
+    source_type: RecordingSource,
+    source_name: &str,
+) -> Vec<MeetingRecording> {
+    items
+        .into_iter()
+        .filter(|item| is_recording_video_name(&item.name))
+        .map(|item| MeetingRecording {
+            drive_id: drive_id.to_string(),
+            item,
+            source_type,
+            source_name: source_name.to_string(),
+        })
+        .collect()
+}
+
+/// Collect recordings from the signed-in user's OneDrive `Recordings` folder.
+/// Missing folder or permission problems simply yield no recordings.
+async fn collect_onedrive_recordings(client: &GraphClient, token: &str) -> Vec<MeetingRecording> {
+    let base = client.base_url();
+
+    // Resolve the user's own drive id so later thumbnails/downloads can address it.
+    let drive_url = format!("{}/me/drive?$select=id", base);
+    let drive_id = match client
+        .request_with_retry(token, |http, tkn| http.get(&drive_url).bearer_auth(tkn))
+        .await
+    {
+        Ok(response) => match response.json::<RawDrive>().await {
+            Ok(drive) => drive.id.unwrap_or_default(),
+            Err(e) => {
+                eprintln!("[recordings] OneDrive source skipped: bad drive response: {}", e);
+                return Vec::new();
+            }
+        },
+        Err(e) => {
+            eprintln!("[recordings] OneDrive source skipped: drive lookup failed: {}", e);
+            return Vec::new();
+        }
+    };
+    if drive_id.is_empty() {
+        eprintln!("[recordings] OneDrive source skipped: empty drive id");
+        return Vec::new();
+    }
+
+    let url = format!(
+        "{}/me/drive/root:/Recordings/children?$top=200&$select={}",
+        base, DRIVE_ITEM_SELECT
+    );
+    // Exact path first; on 404 probe localized aliases in the drive root so
+    // tenants with a non-English recordings folder still resolve.
+    let children = match fetch_all_children(
+        client,
+        token,
+        url,
+        MAX_CHILDREN_PER_CONTAINER,
+        false,
+    )
+    .await
+    {
+        Ok(children) => children,
+        Err(AppError::GraphApi { status_code: 404, .. }) => {
+            match locate_localized_recordings_children(client, token, base).await {
+                Ok(children) => children,
+                Err(e) => {
+                    eprintln!(
+                        "[recordings] OneDrive recordings folder not found (localized probe failed): {}",
+                        e
+                    );
+                    return Vec::new();
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "[recordings] OneDrive Recordings folder listing failed: {}",
+                e
+            );
+            return Vec::new();
+        }
+    };
+    children_into_recordings(children, &drive_id, RecordingSource::OneDrive, "")
+}
+
+/// Collect channel-meeting recordings from one SharePoint site by finding its
+/// `Recordings` folders (exactly named, case-insensitive) across its drives.
+async fn collect_site_recordings(
+    client: &GraphClient,
+    token: &str,
+    site: &Site,
+) -> Vec<MeetingRecording> {
+    if site.id.is_empty() {
+        return Vec::new();
+    }
+    let base = client.base_url();
+    let mut recordings = Vec::new();
+
+    let drives_url = format!("{}/sites/{}/drives?$top=50", base, site.id);
+    let drives = match client
+        .request_with_retry(token, |http, tkn| http.get(&drives_url).bearer_auth(tkn))
+        .await
+    {
+        Ok(response) => match response.json::<GraphCollection<RawDrive>>().await {
+            Ok(collection) => collection.value,
+            Err(e) => {
+                eprintln!(
+                    "[recordings] Site '{}' skipped: bad drives response: {}",
+                    site.display_name, e
+                );
+                return recordings;
+            }
+        },
+        Err(e) => {
+            eprintln!(
+                "[recordings] Site '{}' skipped: drives listing failed: {}",
+                site.display_name, e
+            );
+            return recordings;
+        }
+    };
+
+    for drive in drives.iter().take(MAX_DRIVES_PER_SITE) {
+        let Some(drive_id) = drive.id.as_deref().filter(|id| !id.is_empty()) else {
+            continue;
+        };
+
+        let search_url = format!(
+            "{}/drives/{}/root/search(q='Recordings')?$select={}",
+            base, drive_id, DRIVE_ITEM_SELECT
+        );
+        let containers: Vec<String> = match client
+            .request_with_retry(token, |http, tkn| http.get(&search_url).bearer_auth(tkn))
+            .await
+        {
+            Ok(response) => match response.json::<GraphCollection<RawDriveItem>>().await {
+                Ok(found) => found
+                    .value
+                    .into_iter()
+                    .map(DriveItem::from)
+                    .filter(|item| item.is_folder && item.name.eq_ignore_ascii_case("Recordings"))
+                    .take(MAX_RECORDING_CONTAINERS_PER_DRIVE)
+                    .map(|item| item.id)
+                    .collect(),
+                Err(e) => {
+                    eprintln!(
+                        "[recordings] Site '{}' drive '{}': Recordings search failed: {}",
+                        site.display_name,
+                        drive.name.as_deref().unwrap_or(drive_id),
+                        e
+                    );
+                    continue;
+                }
+            },
+            Err(e) => {
+                eprintln!(
+                    "[recordings] Site '{}' drive '{}': Recordings search request failed: {}",
+                    site.display_name,
+                    drive.name.as_deref().unwrap_or(drive_id),
+                    e
+                );
+                continue;
+            }
+        };
+
+        for container_id in containers {
+            let children_url = format!(
+                "{}/drives/{}/items/{}/children?$top=200&$select={}",
+                base, drive_id, container_id, DRIVE_ITEM_SELECT
+            );
+            if let Ok(children) = fetch_all_children(
+                client,
+                token,
+                children_url,
+                MAX_CHILDREN_PER_CONTAINER,
+                false,
+            )
+            .await
+            {
+                recordings.extend(children_into_recordings(
+                    children,
+                    drive_id,
+                    RecordingSource::SharePoint,
+                    &site.display_name,
+                ));
+            }
+        }
+    }
+
+    recordings
+}
+
+/// Aggregate Teams meeting recordings visible to the account:
+/// organizer OneDrive recordings plus channel-meeting recordings on SharePoint.
+///
+/// 21Vianet is not supported for this feature yet: SharePoint recordings there
+/// rely on groups discovery and Graph communications APIs are unavailable.
 #[tauri::command]
-pub async fn get_shared_drives(
+pub async fn get_meeting_recordings(
     cloud_env: String,
     home_account_id: String,
     auth_module: State<'_, Mutex<AuthModule>>,
-) -> Result<Vec<Drive>, AppError> {
+) -> Result<Vec<MeetingRecording>, AppError> {
     let env = parse_cloud_env(&cloud_env)?;
+    if env == CloudEnvironment::China {
+        return Ok(Vec::new());
+    }
     let token = {
         let mut auth = auth_module.lock().await;
         auth.get_token_for_account(env.clone(), &home_account_id)
             .await?
     };
 
-    let client = GraphClient::new(env);
-    let url = format!("{}/me/drive/sharedWithMe", client.base_url());
+    let client = Arc::new(GraphClient::new(env.clone()));
 
-    let response = client
-        .request_with_retry(&token, |http, tkn| http.get(&url).bearer_auth(tkn))
-        .await?;
+    let mut recordings = collect_onedrive_recordings(&client, &token).await;
 
-    let collection: GraphCollection<RawDrive> =
-        response.json().await.map_err(|e| AppError::GraphApi {
-            message: format!("Failed to parse shared drives response: {}", e),
-            status_code: 0,
-        })?;
+    // Recordings shared with the user cover participant meetings: those files
+    // live inside other people's OneDrive recordings folders.  Microsoft Search
+    // (/search/query) is used instead of /me/drive/sharedWithMe because the
+    // latter is deprecated and returns far fewer items than the web UI shows.
+    if env == CloudEnvironment::Global {
+        recordings.extend(collect_search_recordings(&client, &token).await);
+    }
 
-    Ok(collection.value.into_iter().map(Drive::from).collect())
+    let sites = discover_sites(&client, env.clone(), &token)
+        .await
+        .into_iter()
+        .take(MAX_RECORDING_SITES);
+
+    let site_recordings = futures::stream::iter(sites.map(|site| {
+        let client = Arc::clone(&client);
+        let token = token.clone();
+        async move { collect_site_recordings(&client, &token, &site).await }
+    }))
+    .buffer_unordered(RECORDING_SITE_CONCURRENCY)
+    .collect::<Vec<_>>()
+    .await;
+    recordings.extend(site_recordings.into_iter().flatten());
+
+    // Register discovered drive ids so later per-drive commands (thumbnails,
+    // previews) can mint tokens the same way OneDrive tabs already do.
+    {
+        let mut auth = auth_module.lock().await;
+        for recording in &recordings {
+            auth.register_drive_mapping(&env, &recording.drive_id, &home_account_id);
+        }
+    }
+
+    // Dedupe across sources, then show newest first.
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    recordings
+        .retain(|recording| seen.insert((recording.drive_id.clone(), recording.item.id.clone())));
+    sort_recordings_desc(&mut recordings);
+
+    Ok(recordings)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn recording(name: &str, created: Option<&str>) -> MeetingRecording {
+        MeetingRecording {
+            drive_id: "drive".to_string(),
+            item: DriveItem {
+                id: name.to_string(),
+                name: name.to_string(),
+                size: Some(1),
+                last_modified: "2026-01-01T00:00:00Z".to_string(),
+                is_folder: false,
+                mime_type: Some("video/mp4".to_string()),
+                web_url: None,
+                parent_reference: None,
+                download_url: None,
+                created_date_time: created.map(|s| s.to_string()),
+            },
+            source_type: RecordingSource::OneDrive,
+            source_name: String::new(),
+        }
+    }
+
+    #[test]
+    fn video_extension_filter_matches_recording_names_case_insensitively() {
+        assert!(is_recording_video_name(
+            "2026-08-20 14-30 - Sprint Review.MP4"
+        ));
+        assert!(is_recording_video_name("meeting.mkv"));
+        assert!(is_recording_video_name("clip.WebM"));
+
+        // Transcripts, documents and extension-less names are not recordings.
+        assert!(!is_recording_video_name("meeting.vtt"));
+        assert!(!is_recording_video_name("notes.txt"));
+        assert!(!is_recording_video_name("noextension"));
+        // ".mp4" hidden in the middle does not count as the extension.
+        assert!(!is_recording_video_name("mp4.backup"));
+    }
+
+    #[test]
+    fn recordings_path_matcher_accepts_localized_aliases_only() {
+        assert!(path_points_to_recordings_folder(Some(&"/drive/root:/Recordings".to_string())));
+        assert!(path_points_to_recordings_folder(Some(&"/drive/root:/recordings/sub".to_string())));
+        assert!(path_points_to_recordings_folder(Some(&"/drive/root:/会议录制".to_string())));
+        assert!(path_points_to_recordings_folder(Some(&"/drive/root:/录制/2026".to_string())));
+
+        // Similar-looking segments are not folder-name matches.
+        assert!(!path_points_to_recordings_folder(Some(
+            &"/drive/root:/Documents/recordings-backup".to_string()
+        )));
+        assert!(!path_points_to_recordings_folder(None));
+    }
+
+    #[test]
+    fn recordings_sort_newest_first_and_unparseable_dates_sink_to_bottom() {
+        let mut recordings = vec![
+            recording("old", Some("2026-08-19T10:00:00Z")),
+            recording("bad", None),
+            recording("newest", Some("2026-08-20T14:30:00Z")),
+            recording("middle", Some("2026-08-20T06:30:00Z")),
+        ];
+
+        sort_recordings_desc(&mut recordings);
+
+        let names: Vec<&str> = recordings.iter().map(|r| r.item.id.as_str()).collect();
+        assert_eq!(names, vec!["newest", "middle", "old", "bad"]);
+    }
+
+    #[test]
+    fn recordings_sort_tiebreaks_by_name_case_insensitively() {
+        let mut recordings = vec![
+            recording("Sprint", Some("2026-08-20T14:30:00Z")),
+            recording("alpha", Some("2026-08-20T14:30:00Z")),
+            recording("Beta", Some("2026-08-20T14:30:00Z")),
+        ];
+
+        sort_recordings_desc(&mut recordings);
+
+        let names: Vec<&str> = recordings.iter().map(|r| r.item.id.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "Beta", "Sprint"]);
+    }
 
     #[test]
     fn file_facet_maps_to_file() {

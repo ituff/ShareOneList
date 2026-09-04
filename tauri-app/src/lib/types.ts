@@ -50,6 +50,20 @@ export interface Site {
   webUrl: string;
 }
 
+/** Where a Teams meeting recording was discovered. */
+export type RecordingSource = "onedrive" | "sharepoint" | "search";
+
+/** A Teams meeting recording aggregated across the user's drives. */
+export interface MeetingRecording {
+  /** Drive holding the recording file (used for thumbnails/downloads). */
+  driveId: string;
+  /** The recording file itself. */
+  item: DriveItem;
+  sourceType: RecordingSource;
+  /** Originating site name; empty for OneDrive recordings. */
+  sourceName: string;
+}
+
 // ─── Navigation & UI State ──────────────────────────────────────────────────
 
 /** A single breadcrumb entry for folder path navigation. */
@@ -67,8 +81,8 @@ export type LayoutMode = "list" | "grid" | "gallery";
 /** Per-tab state for multi-tab file browsing. */
 export interface TabState {
   id: string;
-  /** Whether this tab browses a drive or previews a file. */
-  kind: "drive" | "preview";
+  /** Whether this tab browses a drive, previews a file, or lists meeting recordings. */
+  kind: "drive" | "preview" | "recordings";
   driveId: string;
   driveName: string;
   cloudEnv: CloudEnvironment;
@@ -107,11 +121,16 @@ export interface AppConfig {
 }
 
 /** A persisted account entry linking a user to a specific drive. */
+/** Whether a Microsoft identity is a consumer or a work/school account. */
+export type AccountType = "personal" | "organization";
+
 export interface AccountEntry {
   homeAccountId: string;
   driveId: string;
   cloudType: CloudEnvironment;
   displayName: string;
+  /** Personal vs organizational; global accounts only, `null` for legacy entries. */
+  accountType?: AccountType | null;
 }
 
 /** Result returned when a download batch is created. */
@@ -164,6 +183,8 @@ export interface AccountInfo {
   displayName: string;
   driveId: string;
   cloudEnv: CloudEnvironment;
+  /** Personal vs organizational; global accounts only. */
+  accountType?: AccountType | null;
 }
 
 // ─── File Operations ────────────────────────────────────────────────────────

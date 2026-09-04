@@ -17,6 +17,7 @@ import type {
   DriveQuota,
   DownloadFileSpec,
   ExternalDownloaderConfig,
+  MeetingRecording,
   SearchScope,
   ShareOptions,
   Site,
@@ -225,13 +226,28 @@ export function getSiteDrives(
 }
 
 /**
- * Get drives shared with the current user.
+ * Aggregate Teams meeting recordings visible to the account:
+ * organizer OneDrive `Recordings` folder plus SharePoint channel-meeting
+ * `Recordings` folders across all discoverable sites.
  */
-export function getSharedDrives(
+export function getMeetingRecordings(
   cloudEnv: CloudEnvironment,
   homeAccountId: string
-): Promise<Drive[]> {
-  return invoke<Drive[]>("get_shared_drives", { cloudEnv, homeAccountId });
+): Promise<MeetingRecording[]> {
+  return invoke<MeetingRecording[]>("get_meeting_recordings", { cloudEnv, homeAccountId });
+}
+
+/**
+ * Opens a one-shot loopback channel that receives the finished MP4 from the
+ * in-webview stream pipeline. Used for recordings whose download is blocked
+ * by tenant policy but that can still be played in the embedded preview.
+ */
+export function beginStreamDownload(
+  savePath: string
+): Promise<{ port: number; uploadToken: string }> {
+  return invoke<{ port: number; uploadToken: string }>("begin_stream_download", {
+    savePath,
+  });
 }
 
 // ─── Transfers: Downloads ───────────────────────────────────────────────────

@@ -56,6 +56,32 @@ pub struct Site {
     pub web_url: String,
 }
 
+/// Where a Teams meeting recording was discovered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordingSource {
+    /// Organizer's OneDrive `Recordings` folder.
+    OneDrive,
+    /// A SharePoint site document library `Recordings` folder (channel meetings).
+    SharePoint,
+    /// Found via Microsoft Search across all content the user can access,
+    /// covering participant-visible recordings on other people's drives.
+    Search,
+}
+
+/// A Teams meeting recording aggregated across the user's drives.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingRecording {
+    /// Drive holding the recording file; used by the frontend for thumbnails/downloads.
+    pub drive_id: String,
+    /// The recording file itself.
+    pub item: DriveItem,
+    pub source_type: RecordingSource,
+    /// Display name of the originating site; empty for OneDrive recordings.
+    pub source_name: String,
+}
+
 /// Transfer progress emitted via Tauri events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +133,16 @@ pub struct WindowState {
     pub is_maximized: bool,
 }
 
+/// Whether a Microsoft identity is a consumer (personal MSA) or an
+/// organizational (work/school Entra) account. Only meaningful for the Global
+/// cloud; 21Vianet sign-in is organizational by definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccountCategory {
+    Personal,
+    Organization,
+}
+
 /// A persisted account entry linking a user to a drive and cloud environment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,6 +155,9 @@ pub struct AccountEntry {
     pub cloud_type: CloudEnvironment,
     #[serde(alias = "display_name")]
     pub display_name: String,
+    /// Personal vs organizational identity; `None` for legacy entries and 21Vianet.
+    #[serde(default, alias = "account_type")]
+    pub account_type: Option<AccountCategory>,
 }
 
 /// Options for creating a share link.
@@ -195,6 +234,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn account_entry_tolerates_missing_account_type() {
+        // Legacy accounts.json entries predate the accountType field.
+        let legacy = r#"{
+            "homeAccountId": "user-1",
+            "driveId": "drive-1",
+            "cloudType": "global",
+            "displayName": "Test User"
+        }"#;
+        let entry: AccountEntry = serde_json::from_str(legacy).unwrap();
+        assert_eq!(entry.account_type, None);
+
+        let entry = AccountEntry {
+            home_account_id: "user-1".to_string(),
+            drive_id: "drive-1".to_string(),
+            cloud_type: CloudEnvironment::Global,
+            display_name: "Test User".to_string(),
+            account_type: Some(AccountCategory::Personal),
+        };
+        let value: serde_json::Value = serde_json::to_value(&entry).unwrap();
+        assert_eq!(value["accountType"], "personal");
+    }
+
+    #[test]
     fn drive_item_serializes_with_camel_case_keys() {
         let item = DriveItem {
             id: "1".to_string(),
@@ -260,6 +322,34 @@ mod tests {
         let value = serde_json::to_value(config).unwrap();
         assert_eq!(value["window"]["isMaximized"], true);
         assert_eq!(value["lastDownloadPath"], "C:\\Downloads");
+    }
+
+    #[test]
+    fn meeting_recording_serializes_camel_case_and_source_lowercase() {
+        let recording = MeetingRecording {
+            drive_id: "drive".to_string(),
+            item: DriveItem {
+                id: "42".to_string(),
+                name: "2026-08-20 14-30 - Sprint.mp4".to_string(),
+                size: Some(1024),
+                last_modified: "2026-08-20T06:30:00Z".to_string(),
+                is_folder: false,
+                mime_type: Some("video/mp4".to_string()),
+                web_url: None,
+                parent_reference: None,
+                download_url: None,
+                created_date_time: Some("2026-08-20T06:30:00Z".to_string()),
+            },
+            source_type: RecordingSource::SharePoint,
+            source_name: "Engineering".to_string(),
+        };
+
+        let value = serde_json::to_value(recording).unwrap();
+        assert_eq!(value["driveId"], "drive");
+        assert_eq!(value["item"]["isFolder"], false);
+        assert_eq!(value["item"]["createdDateTime"], "2026-08-20T06:30:00Z");
+        assert_eq!(value["sourceType"], "sharepoint");
+        assert_eq!(value["sourceName"], "Engineering");
     }
 
     #[test]

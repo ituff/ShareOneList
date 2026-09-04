@@ -3,4 +3,5 @@
 
 pub mod commands;
 pub mod download;
+pub mod stream_bridge;
 pub mod upload;

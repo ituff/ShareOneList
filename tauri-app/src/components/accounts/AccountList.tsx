@@ -38,6 +38,16 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
       : t("accounts.cloudChina");
   };
 
+  /** Second line of the label: personal/organizational marker for global accounts. */
+  const getAccountTypeLabel = (account: AccountEntry): string | null => {
+    if (account.cloudType !== "global" || !account.accountType) {
+      return null;
+    }
+    return account.accountType === "personal"
+      ? t("accounts.typePersonal")
+      : t("accounts.typeOrganization");
+  };
+
   const getDisplayName = (account: AccountEntry): string => {
     if (account.displayName && account.displayName !== "Unknown User") {
       return account.displayName;
@@ -98,6 +108,12 @@ export function AccountList({ onDriveSelect }: AccountListProps) {
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {getCloudLabel(account.cloudType)}
+                    {getAccountTypeLabel(account) && (
+                      <span className="text-muted-foreground/70">
+                        {" · "}
+                        {getAccountTypeLabel(account)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

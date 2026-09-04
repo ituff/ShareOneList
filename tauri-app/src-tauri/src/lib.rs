@@ -16,9 +16,37 @@ use transfer::upload::UploadEngine;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin: rejects a second app instance and focuses
+        // the existing window. Two instances sharing one refresh token rotate
+        // each other out server-side, which kept forcing re-login prompts.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // The main window is created here instead of in tauri.conf.json so
+            // we can attach the stream-capture boot script, which must run in
+            // ALL frames — including the cross-origin SharePoint player iframes
+            // embedded in preview tabs (see src/stream_boot.js).
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+                .title("ShareOneList")
+                .inner_size(1024.0, 768.0)
+                .min_inner_size(800.0, 600.0)
+                .resizable(true)
+                .initialization_script_for_all_frames(include_str!("stream_boot.js"))
+                // Keep Tauri's default exclusions, then allow the recording
+                // pipeline inside SharePoint player frames to POST the muxed
+                // MP4 back to our loopback receiver: newer Chromium blocks or
+                // permission-prompts public-to-local requests unless these
+                // features are switched off.
+                .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessRespectPreflightResults,LocalNetworkAccessService,PrivateNetworkAccessSendPreflights")
+                .build()?;
+
             let app_data_dir = app
                 .path()
                 .app_data_dir()
@@ -68,8 +96,9 @@ pub fn run() {
             graph::commands::get_text_content,
             graph::commands::get_sharepoint_sites,
             graph::commands::get_site_drives,
-            graph::commands::get_shared_drives,
+            graph::commands::get_meeting_recordings,
             transfer::commands::download_file,
+            transfer::commands::begin_stream_download,
             transfer::commands::download_files,
             transfer::commands::download_folder,
             transfer::commands::get_download_tasks,

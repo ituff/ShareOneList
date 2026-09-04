@@ -7,6 +7,7 @@ import { BookmarksPage } from "../bookmarks/BookmarksPage";
 import { FileBrowser } from "../files/FileBrowser";
 import { PreviewPage } from "../files/PreviewPage";
 import { DriveHubPage } from "../files/DriveHubPage";
+import { RecordingsPage } from "../files/RecordingsPage";
 import { SharePointSites } from "../files/SharePointSites";
 import { DriveList } from "../files/DriveList";
 import { TabBar } from "./TabBar";
@@ -15,7 +16,13 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
-import type { AccountEntry, CloudEnvironment, DriveItem, Site } from "../../lib/types";
+import type {
+  AccountEntry,
+  CloudEnvironment,
+  DriveItem,
+  MeetingRecording,
+  Site,
+} from "../../lib/types";
 
 function HomePage() {
   const { t } = useTranslation();
@@ -32,13 +39,15 @@ type FilesNavState =
   | { step: "accounts" }
   | { step: "hub"; account: AccountEntry }
   | { step: "sharepoint-sites"; account: AccountEntry }
-  | { step: "drive-list"; account: AccountEntry; mode: "sharepoint" | "shared"; site?: Site };
+  | { step: "drive-list"; account: AccountEntry; site: Site };
 
 function FilesPage() {
+  const { t } = useTranslation();
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const openTab = useTabStore((s) => s.openTab);
   const openPreviewTab = useTabStore((s) => s.openPreviewTab);
+  const openRecordingsTab = useTabStore((s) => s.openRecordingsTab);
   const closeTab = useTabStore((s) => s.closeTab);
   const switchTab = useTabStore((s) => s.switchTab);
 
@@ -55,7 +64,12 @@ function FilesPage() {
       : "";
 
   // When an account is double-clicked, go to DriveHubPage
-  const handleAccountSelect = (_driveId: string, _driveName: string, _cloudEnv: CloudEnvironment, account?: AccountEntry) => {
+  const handleAccountSelect = (
+    _driveId: string,
+    _driveName: string,
+    _cloudEnv: CloudEnvironment,
+    account?: AccountEntry
+  ) => {
     if (account) {
       setIsCreatingTab(true);
       setNavState({ step: "hub", account });
@@ -79,6 +93,17 @@ function FilesPage() {
     }
   };
 
+  /** Open a meeting recording from the recordings tab in a player tab. */
+  const handleOpenRecording = (recording: MeetingRecording) => {
+    if (!activeTab || activeTab.kind !== "recordings") return;
+    openPreviewTab(
+      recording.item,
+      recording.driveId,
+      activeTab.cloudEnv,
+      activeTab.homeAccountId
+    );
+  };
+
   const handleNewTab = () => {
     setNavState({ step: "accounts" });
     setIsCreatingTab(true);
@@ -97,7 +122,59 @@ function FilesPage() {
     }
   };
 
-  const showActiveTab = activeTab && !isCreatingTab;
+  /** The pre-tab navigation flow, also overlaid while creating a new tab. */
+  const navPages = (
+    <>
+      {navState.step === "hub" && (
+        <DriveHubPage
+          account={navState.account}
+          onDriveSelect={handleDriveSelect}
+          onSharePointSelect={() =>
+            setNavState({ step: "sharepoint-sites", account: navState.account })
+          }
+          onMeetingsSelect={() => {
+            openRecordingsTab(
+              navState.account.homeAccountId,
+              navState.account.cloudType,
+              t("recordings.title")
+            );
+            setIsCreatingTab(false);
+          }}
+          onBack={() => setNavState({ step: "accounts" })}
+        />
+      )}
+
+      {navState.step === "sharepoint-sites" && (
+        <SharePointSites
+          cloudEnv={navState.account.cloudType}
+          homeAccountId={navState.account.homeAccountId}
+          onSiteSelect={(site) =>
+            setNavState({
+              step: "drive-list",
+              account: navState.account,
+              site,
+            })
+          }
+          onBack={() => setNavState({ step: "hub", account: navState.account })}
+        />
+      )}
+
+{navState.step === "drive-list" && (
+	        <DriveList
+	          siteId={navState.site.id}
+	          siteName={navState.site.displayName}
+	          cloudEnv={navState.account.cloudType}
+	          homeAccountId={navState.account.homeAccountId}
+	          onDriveSelect={handleDriveSelect}
+	          onBack={() =>
+	            setNavState({ step: "sharepoint-sites", account: navState.account })
+	          }
+	        />
+	      )}
+
+      {navState.step === "accounts" && <AccountList onDriveSelect={handleAccountSelect} />}
+    </>
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -109,76 +186,54 @@ function FilesPage() {
         />
       )}
 
-      {showActiveTab && activeTab ? (
-        <div className="flex-1 min-h-0 pt-2">
-          {activeTab.kind === "preview" ? (
-            <PreviewPage tab={activeTab} />
-          ) : (
-            <FileBrowser
-              key={activeTab.id}
-              tabId={activeTab.id}
-              driveId={activeTab.driveId}
-              homeAccountId={activeTab.homeAccountId}
-              cloudEnv={activeTab.cloudEnv}
-              driveName={activeTab.driveName}
-              onOpenPreview={handleOpenPreview}
-            />
+      {/* All tabs stay mounted (keep-alive) so background videos keep playing and
+          players survive tab switches; inactive tabs are hidden via display:none. */}
+      {tabs.length > 0 && (
+        <div className="relative min-h-0 flex-1 pt-2">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId && !isCreatingTab;
+            return (
+              <div
+                key={tab.id}
+                className={`absolute inset-0 flex min-h-0 flex-col ${isActive ? "" : "hidden"}`}
+              >
+                {tab.kind === "preview" ? (
+                  <PreviewPage tab={tab} />
+                ) : tab.kind === "recordings" ? (
+                  <RecordingsPage
+                    account={{
+                      homeAccountId: tab.homeAccountId,
+                      driveId: "",
+                      cloudType: tab.cloudEnv,
+                      displayName: tab.driveName,
+                    }}
+                    onOpenRecording={handleOpenRecording}
+                    onBack={() => closeTab(tab.id)}
+                  />
+                ) : (
+                  <FileBrowser
+                    tabId={tab.id}
+                    isActive={isActive}
+                    driveId={tab.driveId}
+                    homeAccountId={tab.homeAccountId}
+                    cloudEnv={tab.cloudEnv}
+                    driveName={tab.driveName}
+                    onOpenPreview={handleOpenPreview}
+                  />
+                )}
+              </div>
+            );
+          })}
+          {isCreatingTab && (
+            <div className="absolute inset-0 z-40 overflow-auto bg-background pt-2">
+              {navPages}
+            </div>
           )}
         </div>
-      ) : (
-        <div className="flex-1 min-h-0 overflow-auto pt-2">
-          {navState.step === "hub" && (
-            <DriveHubPage
-              account={navState.account}
-              onDriveSelect={handleDriveSelect}
-              onSharePointSelect={() =>
-                setNavState({ step: "sharepoint-sites", account: navState.account })
-              }
-              onSharedSelect={() =>
-                setNavState({ step: "drive-list", account: navState.account, mode: "shared" })
-              }
-              onBack={() => setNavState({ step: "accounts" })}
-            />
-          )}
+      )}
 
-          {navState.step === "sharepoint-sites" && (
-            <SharePointSites
-              cloudEnv={navState.account.cloudType}
-              homeAccountId={navState.account.homeAccountId}
-              onSiteSelect={(site) =>
-                setNavState({
-                  step: "drive-list",
-                  account: navState.account,
-                  mode: "sharepoint",
-                  site,
-                })
-              }
-              onBack={() => setNavState({ step: "hub", account: navState.account })}
-            />
-          )}
-
-          {navState.step === "drive-list" && (
-            <DriveList
-              mode={navState.mode}
-              siteId={navState.site?.id}
-              siteName={navState.site?.displayName}
-              cloudEnv={navState.account.cloudType}
-              homeAccountId={navState.account.homeAccountId}
-              onDriveSelect={handleDriveSelect}
-              onBack={() => {
-                if (navState.mode === "sharepoint") {
-                  setNavState({ step: "sharepoint-sites", account: navState.account });
-                } else {
-                  setNavState({ step: "hub", account: navState.account });
-                }
-              }}
-            />
-          )}
-
-          {navState.step === "accounts" && (
-            <AccountList onDriveSelect={handleAccountSelect} />
-          )}
-        </div>
+      {tabs.length === 0 && (
+        <div className="min-h-0 flex-1 overflow-auto pt-2">{navPages}</div>
       )}
     </div>
   );
