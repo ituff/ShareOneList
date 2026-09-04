@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { HardDrive, Building2, Users, ArrowLeft } from "lucide-react";
+import { HardDrive, Building2, Video, ArrowLeft } from "lucide-react";
 import type { AccountEntry, CloudEnvironment } from "../../lib/types";
 import { StorageInfo } from "./StorageInfo";
 import { useToastStore } from "../../stores/toastStore";
@@ -13,23 +13,26 @@ interface DriveHubPageProps {
     homeAccountId: string
   ) => void;
   onSharePointSelect: () => void;
-  onSharedSelect: () => void;
+  onMeetingsSelect: () => void;
   onBack: () => void;
 }
 
 /**
  * Service selection page shown after selecting an account.
- * Lets the user choose between OneDrive, SharePoint, or Shared drives.
+ * Lets the user choose between OneDrive, SharePoint,
+ * or the Teams meeting recordings page.
  */
 export function DriveHubPage({
   account,
   onDriveSelect,
   onSharePointSelect,
-  onSharedSelect,
+  onMeetingsSelect,
   onBack,
 }: DriveHubPageProps) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  // Meeting recordings are global-only for now.
+  const isRecordingsSupported = account.cloudType === "global";
 
   const handleOneDrive = () => {
     if (!account.driveId) {
@@ -60,7 +63,7 @@ export function DriveHubPage({
       </div>
 
       {/* Service selection cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {/* OneDrive */}
         <button
           onClick={handleOneDrive}
@@ -83,14 +86,27 @@ export function DriveHubPage({
           </span>
         </button>
 
-        {/* Shared with me */}
+        {/* Meeting recordings (global accounts only) */}
         <button
-          onClick={onSharedSelect}
-          className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 hover:bg-accent/30 hover:border-primary/50 transition-colors cursor-pointer"
+          onClick={() => {
+            if (!isRecordingsSupported) {
+              addToast("error", t("driveHub.recordingsNotSupported"));
+              return;
+            }
+            onMeetingsSelect();
+          }}
+          className={`flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-6 transition-colors ${
+            isRecordingsSupported
+              ? "hover:bg-accent/30 hover:border-primary/50 cursor-pointer"
+              : "cursor-default opacity-50"
+          }`}
+          title={
+            isRecordingsSupported ? undefined : t("driveHub.recordingsNotSupported")
+          }
         >
-          <Users className="h-10 w-10 text-green-500" />
+          <Video className="h-10 w-10 text-red-500" />
           <span className="text-sm font-medium text-foreground">
-            {t("driveHub.sharedWithMe")}
+            {t("driveHub.meetingRecordings")}
           </span>
         </button>
       </div>

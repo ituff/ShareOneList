@@ -7,7 +7,7 @@ use crate::auth::AuthModule;
 use crate::config::ConfigManager;
 use crate::errors::AppError;
 use crate::graph::GraphClient;
-use crate::models::AccountEntry;
+use crate::models::{AccountCategory, AccountEntry};
 
 /// Account information returned to the frontend after a successful login.
 #[derive(Debug, Clone, Serialize)]
@@ -17,6 +17,7 @@ pub struct AccountInfo {
     pub display_name: String,
     pub drive_id: String,
     pub cloud_env: String,
+    pub account_type: Option<AccountCategory>,
 }
 
 /// Parse a cloud environment string ("global" or "china") into the enum.
@@ -40,10 +41,9 @@ struct MeDriveResponse {
     id: Option<String>,
 }
 
-/// Minimal /me response used to resolve a stable account ID and display name.
+/// Minimal /me response used to resolve the account display name.
 #[derive(Debug, Deserialize)]
 struct MeResponse {
-    id: Option<String>,
     #[serde(rename = "displayName")]
     display_name: Option<String>,
 }
@@ -71,7 +71,7 @@ async fn fetch_me_drive_id(env: &CloudEnvironment, token: &str) -> Result<String
 /// Fetch the signed-in user profile so account entries have a stable ID and real name.
 async fn fetch_me_info(env: &CloudEnvironment, token: &str) -> Result<MeResponse, AppError> {
     let client = GraphClient::new(env.clone());
-    let url = format!("{}/me?$select=id,displayName", client.base_url());
+    let url = format!("{}/me?$select=displayName", client.base_url());
     let response = client
         .request_with_retry(token, |http, tkn| http.get(&url).bearer_auth(tkn))
         .await?;
@@ -104,24 +104,26 @@ pub async fn login(
 
     let drive_id = fetch_me_drive_id(&env, &session.access_token).await?;
     let me_info = fetch_me_info(&env, &session.access_token).await.ok();
-    let account_id = me_info
-        .as_ref()
-        .and_then(|m| m.id.as_ref())
-        .filter(|id| !id.is_empty())
-        .cloned()
-        .unwrap_or_else(|| session.home_account_id.clone());
+    // The session's home account ID (from the ID token `oid` claim) is the one
+    // stable identity across logins. Graph `/me` id intentionally NOT used as
+    // the key: for personal (MSA) accounts it is a different identifier (the
+    // cid), which used to fork the same person into duplicate account entries
+    // whenever a login resolved through a different path.
+    let account_id = session.home_account_id.clone();
     let display_name = me_info
         .as_ref()
         .and_then(|m| m.display_name.as_ref())
         .filter(|name| !name.is_empty())
         .cloned()
         .unwrap_or_else(|| session.display_name.clone());
+    let account_type = session.account_type;
 
     let account_info = AccountInfo {
         home_account_id: account_id.clone(),
         display_name: display_name.clone(),
         drive_id: drive_id.clone(),
         cloud_env: cloud_env.to_lowercase(),
+        account_type,
     };
 
     let mut accounts = config_manager.load_accounts();
@@ -135,7 +137,8 @@ pub async fn login(
         home_account_id: account_id.clone(),
         drive_id: drive_id.clone(),
         cloud_type: env.clone(),
-        display_name: display_name.clone(),
+        display_name,
+        account_type,
     });
     config_manager
         .save_accounts(&accounts)

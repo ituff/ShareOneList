@@ -14,7 +14,7 @@ use url::Url;
 
 use crate::auth::cloud_config::{CloudConfig, CloudEnvironment};
 use crate::errors::AppError;
-use crate::models::AccountEntry;
+use crate::models::{AccountCategory, AccountEntry};
 
 // Default client IDs – these should be overridden from a config file in production.
 // For now they are compile-time constants matching the existing appsettings.json structure.
@@ -22,6 +22,11 @@ const GLOBAL_CLIENT_ID: &str = "9e5165d3-7c32-4cf6-bb54-b444bc429ba8";
 const CHINA_CLIENT_ID: &str = "edbc6b7c-e49c-42bd-8761-c0bc2386856f";
 
 const KEYRING_SERVICE: &str = "shareonelist";
+
+/// Tenant ID of the Microsoft consumer (MSA) identity plane. When the ID token
+/// carries this `tid`, the signed-in account is a personal account; any other
+/// tenant in the Global cloud is a work/school (Entra) account.
+const MSA_TENANT_ID: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
 /// An active authentication session for a single cloud environment.
 #[derive(Debug, Clone)]
@@ -33,6 +38,8 @@ pub struct AuthSession {
     pub expires_at: DateTime<Utc>,
     pub home_account_id: String,
     pub display_name: String,
+    /// Personal vs organizational identity, derived from the ID token `tid`.
+    pub account_type: Option<AccountCategory>,
 }
 
 /// Manages OAuth2 sessions for all cloud environments.
@@ -63,6 +70,8 @@ struct IdTokenClaims {
     oid: Option<String>,
     #[serde(default)]
     sub: Option<String>,
+    #[serde(default)]
+    tid: Option<String>,
 }
 
 /// Binds an ephemeral localhost listener that accepts both IPv4 and IPv6.
@@ -114,7 +123,13 @@ impl AuthModule {
                         keyring_key(&env, &account.home_account_id)
                     );
                 }
-                Err(AppError::Auth { message, .. }) if message.contains("No active session") => {}
+                Err(AppError::Auth { message, .. }) if message.contains("No active session") => {
+                    eprintln!(
+                        "[auth] No stored credential for '{}' ({}) - please log in again",
+                        account.display_name,
+                        keyring_key(&env, &account.home_account_id)
+                    );
+                }
                 Err(e) => eprintln!(
                     "[auth] Failed to restore {} session: {}",
                     keyring_key(&env, &account.home_account_id),
@@ -167,10 +182,12 @@ impl AuthModule {
         let redirect_uri = format!("http://localhost:{}", port);
         let state = uuid::Uuid::new_v4().to_string();
 
-        // Build authorization URL
+        // Build authorization URL. `prompt=select_account` always shows the
+        // account picker so a cached browser session cannot silently complete
+        // the login as a different Microsoft identity than the one intended.
         let scopes = config.scopes.join(" ") + " offline_access";
         let auth_url = format!(
-            "{}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
+            "{}/oauth2/v2.0/authorize?client_id={}&response_type=code&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256&prompt=select_account",
             config.authority,
             urlencoding::encode(&config.client_id),
             urlencoding::encode(&redirect_uri),
@@ -221,6 +238,9 @@ impl AuthModule {
 
         let refresh_token = token_response.refresh_token.unwrap_or_default();
 
+        let account_type =
+            account_category_from_tid(claims.as_ref().and_then(|c| c.tid.as_deref()), &cloud_env);
+
         let session = AuthSession {
             cloud_env: cloud_env.clone(),
             client_id: config.client_id.clone(),
@@ -229,6 +249,7 @@ impl AuthModule {
             expires_at,
             home_account_id: home_account_id.clone(),
             display_name,
+            account_type,
         };
 
         self.sessions.insert(
@@ -254,7 +275,17 @@ impl AuthModule {
 
         if let Some(session) = self.sessions.get(&new_key) {
             if !session.refresh_token.is_empty() {
-                let _ = store_refresh_token(cloud_env, home_account_id, &session.refresh_token);
+                if let Err(e) =
+                    store_refresh_token(cloud_env, home_account_id, &session.refresh_token)
+                {
+                    eprintln!("[auth] Failed to store refresh token after login: {}", e);
+                }
+            } else {
+                eprintln!(
+                    "[auth] WARNING: {} login returned no refresh token; \
+                     credentials will NOT survive an app restart",
+                    keyring_key(cloud_env, home_account_id)
+                );
             }
         }
 
@@ -264,6 +295,24 @@ impl AuthModule {
                 home_account_id.to_string(),
             );
         }
+    }
+
+    /// Registers a drive-to-account mapping so later per-drive commands can
+    /// mint tokens for drives discovered outside of login (e.g. SharePoint
+    /// drives found while aggregating meeting recordings).
+    pub fn register_drive_mapping(
+        &mut self,
+        cloud_env: &CloudEnvironment,
+        drive_id: &str,
+        home_account_id: &str,
+    ) {
+        if drive_id.is_empty() {
+            return;
+        }
+        self.drive_to_account.insert(
+            (cloud_env.clone(), drive_id.to_string()),
+            home_account_id.to_string(),
+        );
     }
 
     /// Logs out one account by clearing its keyring token and session.
@@ -390,6 +439,7 @@ impl AuthModule {
                     expires_at,
                     home_account_id: home_account_id.to_string(),
                     display_name: "Unknown User".to_string(),
+                    account_type: None,
                 });
                 session.access_token = token_response.access_token;
                 session.refresh_token = new_refresh;
@@ -399,6 +449,24 @@ impl AuthModule {
             }
             Err(e) => {
                 self.sessions.remove(&key);
+                // `invalid_grant` means the stored refresh token is dead
+                // (revoked server-side or expired). Purge it so we stop
+                // retrying a doomed refresh on every startup; only an
+                // interactive re-login can recover the account.
+                if e.contains("invalid_grant") {
+                    if let Err(delete_err) = delete_refresh_token(cloud_env, home_account_id) {
+                        eprintln!(
+                            "[auth] Failed to purge dead refresh token for {}: {}",
+                            keyring_key(cloud_env, home_account_id),
+                            delete_err
+                        );
+                    } else {
+                        eprintln!(
+                            "[auth] Purged dead refresh token for {} (re-login required)",
+                            keyring_key(cloud_env, home_account_id)
+                        );
+                    }
+                }
                 Err(AppError::Auth {
                     message: format!("Token expired. Please re-login. ({})", e),
                     cloud_env: cloud_env.clone(),
@@ -627,6 +695,24 @@ async fn refresh_access_token(
 // ID Token decoding (claims only, no signature verification)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Classifies a Microsoft identity by its ID token `tid` claim: the consumer
+/// (MSA) tenant marks a personal account; any other tenant in the Global cloud
+/// is a work/school account. 21Vianet sign-in is organizational by definition.
+/// Returns `None` when the claim is missing/empty and the type cannot be shown.
+fn account_category_from_tid(
+    tid: Option<&str>,
+    cloud_env: &CloudEnvironment,
+) -> Option<AccountCategory> {
+    match cloud_env {
+        CloudEnvironment::China => Some(AccountCategory::Organization),
+        CloudEnvironment::Global => match tid.map(str::trim) {
+            Some(tid) if tid.eq_ignore_ascii_case(MSA_TENANT_ID) => Some(AccountCategory::Personal),
+            Some(tid) if !tid.is_empty() => Some(AccountCategory::Organization),
+            _ => None,
+        },
+    }
+}
+
 /// Decodes the payload of a JWT ID token to extract user claims.
 /// Does NOT verify the signature since we trust the token endpoint.
 fn decode_id_token_claims(id_token: &str) -> Option<IdTokenClaims> {
@@ -653,39 +739,111 @@ fn keyring_key(cloud_env: &CloudEnvironment, home_account_id: &str) -> String {
     format!("refresh_token_{}_{}", home_account_id, env)
 }
 
-/// Stores a refresh token in the platform keyring.
+/// Windows Credential Manager stores blobs as UTF-16 capped at 2560 bytes
+/// (1280 chars). Segment refresh tokens well below that; long AAD tokens
+/// otherwise fail to persist and silently vanish on the next app start.
+const KEYRING_SEGMENT_CHARS: usize = 1000;
+
+/// Splits a token into chunked segments for storage.
+fn split_token_segments(token: &str) -> Vec<String> {
+    if token.is_empty() {
+        return Vec::new();
+    }
+    let mut segments = Vec::new();
+    let mut remaining = token;
+    while !remaining.is_empty() {
+        let take = remaining
+            .char_indices()
+            .nth(KEYRING_SEGMENT_CHARS)
+            .map(|(idx, _)| idx)
+            .unwrap_or(remaining.len());
+        segments.push(remaining[..take].to_string());
+        remaining = &remaining[take..];
+    }
+    segments
+}
+
+/// Individual keyring slot name for a segment.
+fn segment_key(cloud_env: &CloudEnvironment, home_account_id: &str, index: usize) -> String {
+    format!("{}.p{}", keyring_key(cloud_env, home_account_id), index)
+}
+
+/// Removes a keyring credential if it exists (missing entries are fine).
+fn delete_entry_if_exists(service: &'static str, name: &str) {
+    if let Ok(entry) = keyring::Entry::new(service, name) {
+        let _ = entry.delete_credential();
+    }
+}
+
+/// Stores a refresh token in the platform keyring as size-safe segments.
+/// Cleans up the legacy single-entry format and stale trailing segments so
+/// repeated logins never leave orphaned data behind.
 fn store_refresh_token(
     cloud_env: &CloudEnvironment,
     home_account_id: &str,
     token: &str,
 ) -> Result<(), String> {
-    let entry = keyring::Entry::new(
-        KEYRING_SERVICE,
-        &keyring_key(cloud_env, home_account_id),
-    )
+    let legacy_name = keyring_key(cloud_env, home_account_id);
+    delete_entry_if_exists(KEYRING_SERVICE, &legacy_name);
+
+    // Remove any longer segment chain left by a previous, larger token.
+    for index in 0..64usize {
+        let exists = keyring::Entry::new(KEYRING_SERVICE, &segment_key(cloud_env, home_account_id, index))
+            .ok()
+            .and_then(|entry| entry.get_password().ok())
+            .is_some();
+        if !exists {
+            break;
+        }
+        delete_entry_if_exists(KEYRING_SERVICE, &segment_key(cloud_env, home_account_id, index));
+    }
+
+    for (index, segment) in split_token_segments(token).iter().enumerate() {
+        let entry = keyring::Entry::new(
+            KEYRING_SERVICE,
+            &segment_key(cloud_env, home_account_id, index),
+        )
         .map_err(|e| format!("Keyring entry creation failed: {}", e))?;
-    entry
-        .set_password(token)
-        .map_err(|e| format!("Keyring set_password failed: {}", e))
+        entry
+            .set_password(segment)
+            .map_err(|e| format!("Keyring set_password failed: {}", e))?;
+    }
+    Ok(())
 }
 
-/// Loads a refresh token from the platform keyring.
+/// Loads a refresh token from the platform keyring. Prefers the segmented
+/// format and falls back to the legacy single entry written by older builds.
 fn load_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Option<String> {
+    let mut assembled = String::new();
+    for index in 0..64usize {
+        match keyring::Entry::new(KEYRING_SERVICE, &segment_key(cloud_env, home_account_id, index))
+            .ok()
+            .and_then(|entry| entry.get_password().ok())
+        {
+            Some(segment) => assembled.push_str(&segment),
+            None => break,
+        }
+    }
+    if !assembled.is_empty() {
+        return Some(assembled);
+    }
+
     let entry =
         keyring::Entry::new(KEYRING_SERVICE, &keyring_key(cloud_env, home_account_id)).ok()?;
     entry.get_password().ok()
 }
 
-/// Deletes a refresh token from the platform keyring.
+/// Deletes a refresh token from the platform keyring (all segments plus the
+/// legacy single-entry slot).
 fn delete_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(
-        KEYRING_SERVICE,
-        &keyring_key(cloud_env, home_account_id),
-    )
-        .map_err(|e| format!("Keyring entry creation failed: {}", e))?;
-    entry
-        .delete_credential()
-        .map_err(|e| format!("Keyring delete failed: {}", e))
+    delete_entry_if_exists(KEYRING_SERVICE, &keyring_key(cloud_env, home_account_id));
+    for index in 0..64usize {
+        delete_entry_if_exists(
+            KEYRING_SERVICE,
+            &segment_key(cloud_env, home_account_id, index),
+        );
+    }
+    Ok(())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -717,6 +875,36 @@ mod urlencoding {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_account_category_from_tid() {
+        let global = CloudEnvironment::Global;
+        let china = CloudEnvironment::China;
+
+        // Consumer (MSA) tenant → personal account.
+        assert_eq!(
+            account_category_from_tid(Some("9188040d-6c67-4c5b-b112-36a304b66dad"), &global),
+            Some(AccountCategory::Personal)
+        );
+        // Tenant IDs are matched case-insensitively.
+        assert_eq!(
+            account_category_from_tid(Some("9188040D-6C67-4C5B-B112-36A304B66DAD"), &global),
+            Some(AccountCategory::Personal)
+        );
+        // Any other tenant → work/school account.
+        assert_eq!(
+            account_category_from_tid(Some("c74e4333-a432-453d-a900-71aa941d6a6e"), &global),
+            Some(AccountCategory::Organization)
+        );
+        // Missing or blank claim → unknown.
+        assert_eq!(account_category_from_tid(None, &global), None);
+        assert_eq!(account_category_from_tid(Some("  "), &global), None);
+        // 21Vianet sign-in is always organizational, regardless of tid.
+        assert_eq!(
+            account_category_from_tid(None, &china),
+            Some(AccountCategory::Organization)
+        );
+    }
 
     #[test]
     fn test_code_verifier_length() {
@@ -766,6 +954,29 @@ mod tests {
             keyring_key(&CloudEnvironment::China, "account-2"),
             "refresh_token_account-2_china"
         );
+    }
+
+    #[test]
+    fn test_token_segments_round_trip_within_platform_limit() {
+        // A long AAD refresh token (over the 1280-char platform limit).
+        let long_token: String = "Ab3._~".repeat(500); // 3000 chars
+        let segments = split_token_segments(&long_token);
+        assert!(segments.len() >= 3);
+        for segment in &segments {
+            assert!(segment.chars().count() <= KEYRING_SEGMENT_CHARS);
+        }
+        assert_eq!(segments.concat(), long_token);
+
+        // Short tokens stay a single segment; empty yields none.
+        assert_eq!(split_token_segments("abc"), vec!["abc".to_string()]);
+        assert!(split_token_segments("").is_empty());
+    }
+
+    #[test]
+    fn segment_key_names_are_stable_and_ordered() {
+        let env = CloudEnvironment::Global;
+        assert_eq!(segment_key(&env, "acct", 0), "refresh_token_acct_global.p0");
+        assert_eq!(segment_key(&env, "acct", 11), "refresh_token_acct_global.p11");
     }
 
     #[test]
