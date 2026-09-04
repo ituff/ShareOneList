@@ -11,6 +11,8 @@ interface SettingsState {
   window: WindowState;
   /** Last directory used for downloads. */
   lastDownloadPath: string | null;
+  /** Concurrent segment fetches for the recording stream pipeline. */
+  segmentDownloadConcurrency: number;
   /** Whether the initial config has been loaded from the backend. */
   isLoaded: boolean;
 
@@ -24,6 +26,8 @@ interface SettingsState {
   setWindowState: (state: WindowState) => void;
   /** Update the last used download directory and persist to backend. */
   setLastDownloadPath: (path: string | null) => void;
+  /** Update the recording segment download concurrency and persist to backend. */
+  setSegmentDownloadConcurrency: (n: number) => void;
 }
 
 /** Default window state used before config is loaded. */
@@ -50,6 +54,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   language: "system",
   window: defaultWindow,
   lastDownloadPath: null,
+  segmentDownloadConcurrency: 4,
   isLoaded: false,
 
   loadConfig: async () => {
@@ -60,6 +65,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         language: config.language,
         window: config.window,
         lastDownloadPath: config.lastDownloadPath ?? null,
+        segmentDownloadConcurrency: config.segmentDownloadConcurrency ?? 4,
         isLoaded: true,
       });
     } catch (err) {
@@ -77,6 +83,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       language: state.language,
       window: state.window,
       lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
     });
   },
 
@@ -88,6 +95,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       language: lang,
       window: state.window,
       lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
     });
   },
 
@@ -99,6 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       language: state.language,
       window: windowState,
       lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
     });
   },
 
@@ -110,6 +119,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       language: state.language,
       window: state.window,
       lastDownloadPath: path,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+    });
+  },
+
+  setSegmentDownloadConcurrency: (n) => {
+    const clamped = Math.min(16, Math.max(1, Math.round(n) || 4));
+    set({ segmentDownloadConcurrency: clamped });
+    const state = get();
+    persistConfig({
+      theme: state.theme,
+      language: state.language,
+      window: state.window,
+      lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: clamped,
     });
   },
 }));

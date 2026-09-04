@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import type { AccountEntry, AccountInfo, CloudEnvironment } from "../lib/types";
-import { getAccounts, login, logout } from "../lib/tauri";
+import {
+  getAccounts,
+  login,
+  logout,
+  refreshAccountType,
+  updateAccount,
+} from "../lib/tauri";
 
 interface AuthState {
   /** List of connected accounts. */
@@ -28,6 +34,18 @@ interface AuthState {
    * Remove an account: call logout on backend and remove from local state.
    */
   removeAccount: (homeAccountId: string, cloudEnv: CloudEnvironment) => Promise<void>;
+  /** Persist a new alias/icon for an account and update local state. */
+  changeAccount: (
+    homeAccountId: string,
+    cloudEnv: CloudEnvironment,
+    alias?: string | null,
+    icon?: string | null
+  ) => Promise<void>;
+  /**
+   * Re-derive each account's personal/organization type from the backend and
+   * update local state. Heals entries saved before driveType-based detection.
+   */
+  refreshAccountTypes: () => Promise<void>;
   /** Clear the current error. */
   clearError: () => void;
   /** Queue a re-login flow after an expired credential error. */
@@ -119,6 +137,51 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }));
   },
 
+  changeAccount: async (homeAccountId, cloudEnv, alias, icon) => {
+    const updated = await updateAccount(cloudEnv, homeAccountId, alias, icon);
+    set((state) => ({
+      accounts: state.accounts.map((account) =>
+        account.homeAccountId === homeAccountId && account.cloudType === cloudEnv
+          ? {
+              ...account,
+              alias: updated.alias ?? null,
+              icon: updated.icon ?? null,
+            }
+          : account
+      ),
+    }));
+  },
+
+  refreshAccountTypes: async () => {
+    const { accounts } = get();
+    // Re-derive each account's type in the background; a failure (e.g. an
+    // expired session raising the relogin dialog) leaves the entry untouched.
+    await Promise.all(
+      accounts.map(async (account) => {
+        try {
+          const resolved = await refreshAccountType(
+            account.cloudType,
+            account.homeAccountId
+          );
+          if (resolved !== "personal" && resolved !== "organization") return;
+          set((state) => ({
+            accounts: state.accounts.map((entry) =>
+              entry.homeAccountId === account.homeAccountId &&
+              entry.cloudType === account.cloudType
+                ? { ...entry, accountType: resolved }
+                : entry
+            ),
+          }));
+        } catch (err) {
+          console.error(
+            `[authStore] Failed to refresh account type for ${account.homeAccountId}:`,
+            err
+          );
+        }
+      })
+    );
+  },
+
   clearError: () => set({ error: null }),
 
   setPendingRelogin: (pending) => set({ pendingRelogin: pending }),
@@ -129,27 +192,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoggingIn: true, error: null });
     try {
       const accountInfo = await login(cloudEnv);
-      const newEntry: AccountEntry = {
-        homeAccountId: accountInfo.homeAccountId,
-        driveId: accountInfo.driveId,
-        cloudType: accountInfo.cloudEnv,
-        displayName: accountInfo.displayName,
-        accountType: accountInfo.accountType ?? null,
-      };
-      set((state) => ({
-        accounts: [
-          ...state.accounts.filter(
-            (account) =>
-              !(
-                account.homeAccountId === newEntry.homeAccountId &&
-                account.cloudType === newEntry.cloudType
-              )
-          ),
-          newEntry,
-        ],
-        isLoggingIn: false,
-        error: null,
-      }));
+      set((state) => {
+        // Carry over the user-customized alias/icon from the existing entry.
+        const previous = state.accounts.find(
+          (account) => account.homeAccountId === accountInfo.homeAccountId
+        );
+        const newEntry: AccountEntry = {
+          homeAccountId: accountInfo.homeAccountId,
+          driveId: accountInfo.driveId,
+          cloudType: accountInfo.cloudEnv,
+          displayName: accountInfo.displayName,
+          accountType: accountInfo.accountType ?? null,
+          alias: previous?.alias ?? null,
+          icon: previous?.icon ?? null,
+        };
+        return {
+          accounts: [
+            ...state.accounts.filter(
+              (account) =>
+                !(
+                  account.homeAccountId === newEntry.homeAccountId &&
+                  account.cloudType === newEntry.cloudType
+                )
+            ),
+            newEntry,
+          ],
+          isLoggingIn: false,
+          error: null,
+        };
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed";
       set({ isLoggingIn: false, error: message });

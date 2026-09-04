@@ -35,6 +35,38 @@ export function login(cloudEnv: CloudEnvironment): Promise<AccountInfo> {
 }
 
 /**
+ * Update an account's user-set alias and/or icon.
+ * Pass null to leave a field unchanged, or an empty string to reset it.
+ */
+export function updateAccount(
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string,
+  alias?: string | null,
+  icon?: string | null
+): Promise<AccountEntry> {
+  return invoke<AccountEntry>("update_account", {
+    cloudEnv,
+    homeAccountId,
+    alias: alias ?? null,
+    icon: icon ?? null,
+  });
+}
+
+/**
+ * Re-derive the account's personal/organization classification from the live
+ * OneDrive driveType and persist it. Returns "personal"/"organization" or null.
+ */
+export function refreshAccountType(
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
+): Promise<string | null> {
+  return invoke<string | null>("refresh_account_type", {
+    cloudEnv,
+    homeAccountId,
+  });
+}
+
+/**
  * Log out from the specified cloud environment.
  * Clears tokens from secure storage.
  */
@@ -182,6 +214,19 @@ export function getItemProperties(
   cloudEnv: CloudEnvironment
 ): Promise<DriveItem> {
   return invoke<DriveItem>("get_item_properties", { driveId, itemId, cloudEnv });
+}
+
+/**
+ * Probe whether the signed-in user can actually download a drive item.
+ * Requests /content with a 1-byte range; share-link block-download policies
+ * reject it with 403 even when the item metadata still carries a downloadUrl.
+ */
+export function probeDownloadAllowed(
+  driveId: string,
+  itemId: string,
+  cloudEnv: CloudEnvironment
+): Promise<boolean> {
+  return invoke<boolean>("probe_download_allowed", { driveId, itemId, cloudEnv });
 }
 
 /**

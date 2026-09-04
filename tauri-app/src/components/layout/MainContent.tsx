@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
+import wechatQrCode from "../../assets/wechat-qrcode.png";
 import { useNavigationStore } from "../../stores/navigationStore";
 import { AccountList } from "../accounts/AccountList";
 import { BookmarksPage } from "../bookmarks/BookmarksPage";
@@ -13,6 +14,7 @@ import { DriveList } from "../files/DriveList";
 import { TabBar } from "./TabBar";
 import { useTabStore } from "../../stores/tabStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useAuthStore } from "../../stores/authStore";
 import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
@@ -22,6 +24,7 @@ import type {
   DriveItem,
   MeetingRecording,
   Site,
+  TabState,
 } from "../../lib/types";
 
 function HomePage() {
@@ -50,6 +53,7 @@ function FilesPage() {
   const openRecordingsTab = useTabStore((s) => s.openRecordingsTab);
   const closeTab = useTabStore((s) => s.closeTab);
   const switchTab = useTabStore((s) => s.switchTab);
+  const accounts = useAuthStore((s) => s.accounts);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
@@ -106,6 +110,23 @@ function FilesPage() {
 
   const handleNewTab = () => {
     setNavState({ step: "accounts" });
+    setIsCreatingTab(true);
+  };
+
+  /** Back from a tab's root: show the account's service selection page (the
+   * hub) as an overlay; the tab itself stays open in the tab bar. */
+  const handleExitToHub = (tab: TabState) => {
+    const account = accounts.find(
+      (a) => a.homeAccountId === tab.homeAccountId && a.cloudType === tab.cloudEnv
+    );
+    const fallback: AccountEntry = {
+      homeAccountId: tab.homeAccountId,
+      driveId: tab.driveId,
+      cloudType: tab.cloudEnv,
+      displayName: tab.driveName,
+      accountType: null,
+    };
+    setNavState({ step: "hub", account: account ?? fallback });
     setIsCreatingTab(true);
   };
 
@@ -208,7 +229,7 @@ function FilesPage() {
                       displayName: tab.driveName,
                     }}
                     onOpenRecording={handleOpenRecording}
-                    onBack={() => closeTab(tab.id)}
+                    onBack={() => handleExitToHub(tab)}
                   />
                 ) : (
                   <FileBrowser
@@ -219,6 +240,7 @@ function FilesPage() {
                     cloudEnv={tab.cloudEnv}
                     driveName={tab.driveName}
                     onOpenPreview={handleOpenPreview}
+                    onExitToHub={() => handleExitToHub(tab)}
                   />
                 )}
               </div>
@@ -253,6 +275,8 @@ function SettingsPage() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const language = useSettingsStore((s) => s.language);
   const setLanguage = useSettingsStore((s) => s.setLanguage);
+  const segmentConcurrency = useSettingsStore((s) => s.segmentDownloadConcurrency);
+  const setSegmentConcurrency = useSettingsStore((s) => s.setSegmentDownloadConcurrency);
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -310,12 +334,54 @@ function SettingsPage() {
       </section>
 
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <h3 className="text-lg font-semibold text-foreground">{t("settings.downloads")}</h3>
+        <label className="text-sm text-muted-foreground" htmlFor="segment-concurrency-setting">
+          {t("settings.segmentConcurrency")}
+        </label>
+        <select
+          id="segment-concurrency-setting"
+          value={segmentConcurrency}
+          onChange={(e) => setSegmentConcurrency(Number(e.target.value))}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          {[1, 4, 8, 16].map((n) => (
+            <option key={n} value={n}>
+              {t("settings.segmentConcurrencyOption", { count: n })}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">{t("settings.segmentConcurrencyHint")}</p>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.about")}</h3>
         <p className="text-sm text-muted-foreground">{t("settings.aboutDescription")}</p>
+        <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">{t("settings.github")}</span>
+          <a
+            href="https://github.com/ituff/ShareOneList"
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            github.com/ituff/ShareOneList
+          </a>
+        </div>
         <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
           <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
           <span className="text-sm font-medium text-foreground">{version ?? "..."}</span>
         </div>
+      </section>
+
+      {/* WeChat official account promotion */}
+      <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <h3 className="text-lg font-semibold text-foreground">{t("settings.followTitle")}</h3>
+        <p className="text-sm text-muted-foreground">{t("settings.followDescription")}</p>
+        <img
+          src={wechatQrCode}
+          alt="WeChat: ONE生产力"
+          className="w-40 rounded-md border border-border"
+        />
       </section>
 
       <UpdateChecker />

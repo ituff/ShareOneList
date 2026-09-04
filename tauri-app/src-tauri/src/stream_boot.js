@@ -296,8 +296,9 @@
     });
   }
 
-  function downloadDashSegments(tracks, onProgress, signal) {
-    var concurrency = 4;
+  function downloadDashSegments(tracks, onProgress, signal, concurrency) {
+    // User setting from the app (clamped): segments in flight across all tracks.
+    concurrency = Math.min(16, Math.max(1, parseInt(concurrency, 10) || 4));
 
     var totalSegs = tracks.reduce(function (s, t) { return s + (t.initUrl ? 1 : 0) + t.segments.length; }, 0);
     var done = 0;
@@ -917,7 +918,7 @@
         isSeparate = tracksToDownload.length > 1;
       }
 
-      var states = await downloadDashSegments(tracksToDownload, progress, abort.signal);
+      var states = await downloadDashSegments(tracksToDownload, progress, abort.signal, cmd.concurrency);
       var trackData = states.map(function (s) { return s.orderedBufs; });
 
       // Self-heal: any slot that somehow arrived empty is re-fetched directly

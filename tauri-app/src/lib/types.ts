@@ -50,8 +50,8 @@ export interface Site {
   webUrl: string;
 }
 
-/** Where a Teams meeting recording was discovered. */
-export type RecordingSource = "onedrive" | "sharepoint" | "search";
+/** Whether a Teams recording is the user's own or shared with them. */
+export type RecordingSource = "own" | "shared";
 
 /** A Teams meeting recording aggregated across the user's drives. */
 export interface MeetingRecording {
@@ -78,6 +78,9 @@ export type CloudEnvironment = "global" | "china";
 /** Layout mode for the file browser view. */
 export type LayoutMode = "list" | "grid" | "gallery";
 
+/** File list sort column. */
+export type SortKey = "name" | "size" | "modified";
+
 /** Per-tab state for multi-tab file browsing. */
 export interface TabState {
   id: string;
@@ -92,6 +95,9 @@ export interface TabState {
   currentFolderId: string;
   breadcrumbs: BreadcrumbItem[];
   items: DriveItem[];
+  /** Current sort column and direction for the file listing. */
+  sortKey: SortKey;
+  sortAsc: boolean;
   layoutMode: LayoutMode;
   isLoading: boolean;
   error: string | null;
@@ -118,6 +124,8 @@ export interface AppConfig {
   window: WindowState;
   /** Last directory used by the native save dialog for downloads. */
   lastDownloadPath: string | null;
+  /** Concurrent segment fetches for the recording stream pipeline (1-16). */
+  segmentDownloadConcurrency: number;
 }
 
 /** A persisted account entry linking a user to a specific drive. */
@@ -131,6 +139,10 @@ export interface AccountEntry {
   displayName: string;
   /** Personal vs organizational; global accounts only, `null` for legacy entries. */
   accountType?: AccountType | null;
+  /** User-set alias shown instead of the display name; absent when unset. */
+  alias?: string | null;
+  /** Identifier of the user-chosen icon from the built-in icon library. */
+  icon?: string | null;
 }
 
 /** Result returned when a download batch is created. */
