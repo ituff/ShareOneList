@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, Download, ExternalLink, Loader2, RotateCw } from "lucide-react";
+import { AlertCircle, Download, ExternalLink, Loader2, RotateCw, Video } from "lucide-react";
 import { dirname, downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
-import { downloadFile, getPreviewUrl, getTextContent } from "../../lib/tauri";
+import { beginStreamDownload, downloadFile, getPreviewUrl, getTextContent } from "../../lib/tauri";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TabState } from "../../lib/types";
@@ -15,6 +15,27 @@ import { getErrorMessage } from "../../lib/errors";
 
 interface PreviewPageProps {
   tab: TabState;
+}
+
+type StreamState = "idle" | "downloading" | "done" | "error";
+
+interface SolMessage {
+  type: string;
+  captureId?: string;
+  done?: number;
+  total?: number;
+  text?: string;
+  message?: string;
+  isDrm?: boolean;
+}
+
+function isSolMessage(data: unknown): data is SolMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof (data as { type?: unknown }).type === "string" &&
+    (data as { type: string }).type.startsWith("SOL_")
+  );
 }
 
 /** Full-tab file preview backed by the Graph preview API. */
@@ -30,6 +51,14 @@ export function PreviewPage({ tab }: PreviewPageProps) {
   const [isEmbed, setIsEmbed] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [textContent, setTextContent] = useState<string | null>(null);
+
+  // Stream-capture download state (see stream_boot.js in the Rust crate).
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const channelRef = useRef<{ port: number; uploadToken: string } | null>(null);
+  const [capturedId, setCapturedId] = useState<string | null>(null);
+  const [streamState, setStreamState] = useState<StreamState>("idle");
+  const [streamProgress, setStreamProgress] = useState<string>("");
+  const [streamErrorDetail, setStreamErrorDetail] = useState<string>("");
 
   const loadPreview = useCallback(async () => {
     if (!item) return;
@@ -90,6 +119,89 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     loadPreview();
   }, [loadPreview]);
 
+  // ── Stream-capture download (in-webview pipeline) ──────────────────────────
+  const handleStreamMessage = useCallback((event: MessageEvent) => {
+    const data = event.data;
+    if (!isSolMessage(data)) return;
+    switch (data.type) {
+      case "SOL_CAPTURED":
+        if (data.captureId) setCapturedId(data.captureId);
+        break;
+      case "SOL_PROGRESS":
+        setStreamProgress(data.text ?? "");
+        break;
+      case "SOL_DONE":
+        setStreamState("done");
+        setStreamProgress("");
+        addToast("success", t("preview.streamDone"));
+        break;
+      case "SOL_ERROR":
+        setStreamState("error");
+        setStreamProgress("");
+        setStreamErrorDetail(data.message ?? "");
+        console.error("[stream-download] pipeline failed:", data);
+        addToast(
+          "error",
+          data.isDrm ? t("preview.streamDrm") : `${t("preview.streamFailed")}: ${data.message ?? ""}`
+        );
+        break;
+      default:
+        break;
+    }
+  }, [addToast, t]);
+
+  useEffect(() => {
+    window.addEventListener("message", handleStreamMessage);
+    return () => window.removeEventListener("message", handleStreamMessage);
+  }, [handleStreamMessage]);
+
+  // Abort the in-page pipeline when the tab unmounts mid-download.
+  useEffect(() => {
+    return () => {
+      if (capturedId) {
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: "SOL_CANCEL", captureId: capturedId },
+          "*"
+        );
+      }
+    };
+  }, [capturedId]);
+
+  const handleStreamDownload = useCallback(async () => {
+    if (!item || !capturedId || streamState === "downloading") return;
+    try {
+      const dir = lastDownloadPath ?? (await downloadDir());
+      const baseName = item.name.replace(/\.[^.]+$/, "") || "recording";
+      const selected = await save({ defaultPath: await join(dir, `${baseName}.mp4`) });
+      if (!selected) return;
+      setLastDownloadPath(await dirname(selected));
+      setStreamState("downloading");
+      setStreamProgress(t("preview.streamPreparing"));
+      setStreamErrorDetail("");
+      const channel = await beginStreamDownload(selected);
+      channelRef.current = channel;
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SOL_START", captureId: capturedId, port: channel.port, uploadToken: channel.uploadToken },
+        "*"
+      );
+    } catch (err) {
+      setStreamState("error");
+      setStreamProgress("");
+      addToast("error", getErrorMessage(err));
+    }
+  }, [item, capturedId, streamState, lastDownloadPath, setLastDownloadPath, addToast, t]);
+
+  const handleStreamCancel = useCallback(() => {
+    if (capturedId) {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "SOL_CANCEL", captureId: capturedId },
+        "*"
+      );
+    }
+    setStreamState("idle");
+    setStreamProgress("");
+  }, [capturedId]);
+
   const handleDownload = useCallback(async () => {
     if (!item || isDownloading) return;
     setIsDownloading(true);
@@ -129,6 +241,9 @@ export function PreviewPage({ tab }: PreviewPageProps) {
   const isImage = isImageFile(item);
   const isVideo = isVideoFile(item);
   const isMarkdown = isMarkdownFile(item);
+  // The stream pipeline rides on the SharePoint player inside the Graph
+  // preview embed, so it only applies when that embed is what's on screen.
+  const streamAvailable = isVideo && isEmbed;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -137,6 +252,21 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           {item.name}
         </span>
         <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={handleStreamDownload}
+            disabled={!streamAvailable || !capturedId || streamState === "downloading"}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              !streamAvailable
+                ? undefined
+                : capturedId
+                  ? t("preview.streamDownload")
+                  : t("preview.streamNeedCapture")
+            }
+            aria-label={t("preview.streamDownload")}
+          >
+            <Video className="h-3.5 w-3.5" />
+          </button>
           <button
             onClick={handleDownload}
             disabled={isDownloading}
@@ -159,6 +289,42 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           )}
         </div>
       </div>
+
+      {streamAvailable && streamState !== "idle" && (
+        <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+          {streamState === "downloading" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          <span
+            className="truncate"
+            title={
+              streamState === "error" && streamErrorDetail
+                ? `${t("preview.streamFailed")}: ${streamErrorDetail}`
+                : streamState === "downloading"
+                  ? streamProgress
+                  : undefined
+            }
+          >
+            {streamState === "downloading" && streamProgress}
+            {streamState === "done" && t("preview.streamDone")}
+            {streamState === "error" &&
+              (streamErrorDetail
+                ? `${t("preview.streamFailed")}: ${streamErrorDetail}`
+                : t("preview.streamFailed"))}
+          </span>
+          {streamState === "downloading" && (
+            <button
+              onClick={handleStreamCancel}
+              className="ml-auto shrink-0 rounded-md px-2 py-0.5 hover:bg-accent hover:text-foreground transition-colors"
+            >
+              {t("dialogs.cancel")}
+            </button>
+          )}
+        </div>
+      )}
+      {streamAvailable && streamState === "idle" && !capturedId && (
+        <div className="border-b border-border bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+          {t("preview.streamNeedCapture")}
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto bg-muted/20">
         {isLoading && (
@@ -219,6 +385,7 @@ export function PreviewPage({ tab }: PreviewPageProps) {
 
         {!isLoading && !error && previewUrl && !isImage && !(isVideo && !isEmbed) && (
           <iframe
+            ref={iframeRef}
             src={previewUrl}
             title={item.name}
             className="h-full w-full border-0 bg-white"

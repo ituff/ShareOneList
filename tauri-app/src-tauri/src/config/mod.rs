@@ -123,6 +123,7 @@ impl ConfigManager {
                     drive_id,
                     cloud_type,
                     display_name,
+                    account_type: None,
                 });
                 changed = true;
             }
@@ -227,7 +228,7 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ThemeMode, WindowState};
+    use crate::models::{AccountCategory, ThemeMode, WindowState};
     use tempfile::TempDir;
 
     fn make_manager(dir: &TempDir) -> ConfigManager {
@@ -314,12 +315,14 @@ mod tests {
                 drive_id: "drive-1".to_string(),
                 cloud_type: CloudEnvironment::Global,
                 display_name: "Test User".to_string(),
+                account_type: Some(AccountCategory::Organization),
             },
             AccountEntry {
                 home_account_id: "user-2".to_string(),
                 drive_id: "drive-2".to_string(),
                 cloud_type: CloudEnvironment::China,
                 display_name: "测试用户".to_string(),
+                account_type: None,
             },
         ];
 

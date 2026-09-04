@@ -54,6 +54,8 @@ import { getErrorMessage } from "../../lib/errors";
 
 interface FileBrowserProps {
   tabId: string;
+  /** Whether this tab is the visible one; gates window-level listeners. */
+  isActive: boolean;
   driveId: string;
   homeAccountId: string;
   cloudEnv: CloudEnvironment;
@@ -97,7 +99,7 @@ function LayoutButton({
   );
 }
 
-export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName, onOpenPreview }: FileBrowserProps) {
+export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv, driveName, onOpenPreview }: FileBrowserProps) {
   const { t } = useTranslation();
   const loadFolder = useTabStore((s) => s.loadFolder);
   const navigateToFolder = useTabStore((s) => s.navigateToFolder);
@@ -194,7 +196,8 @@ export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName
   /** Handle file drop: upload dropped files to current folder. */
   const handleFileDrop = useCallback(
     async (filePaths: string[]) => {
-      if (!currentFolderId) return;
+      // Hidden (background) tabs must not react to drops meant for the visible one.
+      if (!currentFolderId || !isActive) return;
       try {
         const taskIds = await uploadFiles(driveId, currentFolderId, filePaths, cloudEnv);
         taskIds.forEach((taskId, index) => {
@@ -213,7 +216,7 @@ export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName
         addToast("error", getErrorMessage(err));
       }
     },
-    [driveId, currentFolderId, cloudEnv, loadFolder, reloadFolder, addToast]
+    [driveId, currentFolderId, isActive, cloudEnv, loadFolder, reloadFolder, addToast]
   );
 
   // HTML5 drag handlers for visual feedback (complements Tauri events)
@@ -512,7 +515,8 @@ export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName
   // Keyboard shortcuts for common file browser actions.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (dialog) return;
+      // Keyboard shortcuts only apply to the visible tab.
+      if (!isActive || dialog) return;
 
       const target = e.target as HTMLElement | null;
       const isTyping =
@@ -557,6 +561,7 @@ export function FileBrowser({ tabId, driveId, homeAccountId, cloudEnv, driveName
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     dialog,
+    isActive,
     items,
     selectedItems,
     selectionMode,

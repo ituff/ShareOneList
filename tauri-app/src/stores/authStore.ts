@@ -86,6 +86,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         driveId: accountInfo.driveId,
         cloudType: accountInfo.cloudEnv,
         displayName: displayName || accountInfo.displayName,
+        accountType: accountInfo.accountType ?? null,
       };
 
       set({
@@ -133,6 +134,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         driveId: accountInfo.driveId,
         cloudType: accountInfo.cloudEnv,
         displayName: accountInfo.displayName,
+        accountType: accountInfo.accountType ?? null,
       };
       set((state) => ({
         accounts: [
