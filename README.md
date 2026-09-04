@@ -30,7 +30,7 @@ ShareOneList is a file management tool focused on Microsoft 365. One app covers 
 
 ### macOS Gatekeeper
 
-The current macOS builds are unsigned and not notarized, so the first launch may show "app is damaged" or "cannot be opened". Remove the quarantine attribute before opening:
+The macOS dmg bundles a fix script (`fix-macos-gatekeeper.command`) and bilingual first-launch instructions — open the mounted dmg and double-click the script (right-click → Open if macOS asks). If that doesn't apply to your setup, follow the steps below.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ituff/ShareOneList/main/scripts/fix-macos-gatekeeper.command | bash

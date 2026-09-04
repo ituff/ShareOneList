@@ -2,7 +2,7 @@
   "bundle": {
     "resources": [
       "../scripts/fix-macos-gatekeeper.command",
-      "../scripts/首次启动必读-macOS.txt"
+      "../scripts/README-首次启动必读-macOS.txt"
     ]
   }
 }

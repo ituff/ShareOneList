@@ -136,7 +136,7 @@ jobs:
           mount_dir=$(hdiutil attach "$dmg_file" -readwrite -noverify -nobrowse | tail -1 | cut -f3)
           echo "Mounted at $mount_dir"
           cp "scripts/fix-macos-gatekeeper.command" "$mount_dir/"
-          cp "scripts/首次启动必读-macOS.txt" "$mount_dir/"
+          cp "scripts/README-首次启动必读-macOS.txt" "$mount_dir/"
           chmod +x "$mount_dir/fix-macos-gatekeeper.command"
           hdiutil detach "$mount_dir"
 

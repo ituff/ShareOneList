@@ -30,7 +30,7 @@ ShareOneList 是一个专注 Microsoft 365 的文件管理工具。一个应用�
 
 ### macOS Gatekeeper 说明
 
-当前 GitHub 构建的 macOS 包未签名、未公证，首次打开可能提示“应用已损坏”或“无法打开”。请先移除隔离属性，再打开应用：
+macOS 安装包（dmg）内已附带修复脚本 `fix-macos-gatekeeper.command` 和中英文说明——挂载 dmg 后双击脚本即可（若提示无法验证，右键 → 打开）。若不适用，按下面的步骤操作：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ituff/ShareOneList/main/scripts/fix-macos-gatekeeper.command | bash
