@@ -307,8 +307,24 @@
     "available": "有可用更新",
     "changelog": "更新日志",
     "downloadAndInstall": "下载并安装",
-    "downloading": "正在下载更新...",
-    "failed": "检查更新失败",
-    "upToDate": "已经是最新版本。"
+    "downloading": "正在下载更新…",
+    "failed": "更新下载失败：{{error}}",
+    "upToDate": "已经是最新版本。",
+    "bubbleTitle": "发现新版本 {{version}}",
+    "updateNow": "立即更新",
+    "later": "稍后",
+    "installerReady": "安装包已下载，安装器已打开，请完成安装并重启应用。"
+  },
+  "notifications": {
+    "title": "通知中心",
+    "empty": "暂无通知",
+    "markAllRead": "全部已读",
+    "clear": "清空",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前",
+    "downloadComplete": "下载完成",
+    "downloadFailed": "下载失败"
   }
 }

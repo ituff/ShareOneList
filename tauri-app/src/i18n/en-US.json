@@ -307,8 +307,24 @@
     "available": "Update Available",
     "changelog": "Changelog",
     "downloadAndInstall": "Download & Install",
-    "downloading": "Downloading update...",
-    "failed": "Update check failed",
-    "upToDate": "You are using the latest version."
+    "downloading": "Downloading update…",
+    "failed": "Update download failed: {{error}}",
+    "upToDate": "You are using the latest version.",
+    "bubbleTitle": "New version {{version}} available",
+    "updateNow": "Update now",
+    "later": "Later",
+    "installerReady": "Update downloaded. The installer has been opened — please finish the installation and restart the app."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "markAllRead": "Mark all read",
+    "clear": "Clear all",
+    "justNow": "just now",
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}} h ago",
+    "daysAgo": "{{count}} d ago",
+    "downloadComplete": "Download completed",
+    "downloadFailed": "Download failed"
   }
 }
