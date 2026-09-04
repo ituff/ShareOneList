@@ -85,6 +85,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATRIX_LABEL: ${{ matrix.label }}
         run: |
           $releaseDir = "tauri-app/src-tauri/target/${{ matrix.target }}/release"
           $exe = Join-Path $releaseDir "ShareOneList.exe"
@@ -96,7 +97,7 @@ jobs:
           Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $staging | Out-Null
           Copy-Item -LiteralPath $exe -Destination (Join-Path $staging "ShareOneList.exe")
-          $arch = if ($matrix.label -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $arch = if ($env:MATRIX_LABEL -eq 'windows-arm64') { "arm64" } else { "x64" }
           $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-$arch.zip"
           Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
@@ -106,10 +107,11 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATRIX_LABEL: ${{ matrix.label }}
         run: |
           # WiX names MSIs with the install language (e.g. ..._x64_en-US.msi).
           # We ship a single-language MSI, so re-upload it without the suffix.
-          $arch = if ($matrix.label -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $arch = if ($env:MATRIX_LABEL -eq 'windows-arm64') { "arm64" } else { "x64" }
           $assets = gh release view "${{ github.ref_name }}" --json assets --jq ".assets[].name"
           foreach ($asset in $assets) {
             if ($asset -like "ShareOneList_*_${arch}_en-US.msi") {
