@@ -17,6 +17,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v tag="$tag" '
+            BEGIN { p = 0 }
+            $0 ~ "^## v"tag"([ (]|$)" { p = 1; next }
+            /^## / && p { exit }
+            p { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No CHANGELOG section found for v$tag" >&2
+            exit 1
+          fi
+          cat release-notes.md
+
       - name: Create GitHub Release
         id: create-release
         uses: ncipollo/release-action@v1
@@ -25,7 +41,7 @@ jobs:
           name: ${{ github.ref_name }}
           draft: true
           prerelease: false
-          generateReleaseNotes: true
+          bodyFile: release-notes.md
 
   build-and-upload:
     needs: create-release
