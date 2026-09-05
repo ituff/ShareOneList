@@ -56,8 +56,14 @@ function App() {
     <Suspense fallback={<div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">Loading...</div>}>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-6">
-          <MainContent />
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Top strip: keeps the notification bell clear of page headers */}
+          <div className="flex shrink-0 items-center justify-end px-3 pt-2">
+            <NotificationBell />
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-6 pt-2">
+            <MainContent />
+          </div>
         </main>
       </div>
       <ToastContainer />

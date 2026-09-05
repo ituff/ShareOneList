@@ -51,7 +51,7 @@ export function NotificationBell() {
   };
 
   return (
-    <div ref={containerRef} className="fixed right-3 top-2 z-[90]">
+    <div ref={containerRef} className="relative z-[90]">
       <button
         onClick={() => setPanelOpen(!panelOpen)}
         className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"

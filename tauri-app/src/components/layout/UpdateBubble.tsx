@@ -97,7 +97,7 @@ export function UpdateBubble() {
   const percent = total > 0 ? Math.min(100, Math.round((transferred / total) * 100)) : 0;
 
   return (
-    <div className="fixed right-3 top-11 z-[85] w-80 rounded-lg border border-border bg-card p-3 shadow-lg">
+    <div className="fixed right-3 top-14 z-[85] w-80 rounded-lg border border-border bg-card p-3 shadow-lg">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 shrink-0 text-primary" />
