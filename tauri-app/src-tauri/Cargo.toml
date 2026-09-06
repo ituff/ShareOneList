@@ -1,6 +1,6 @@
 [package]
 name = "share-one-list"
-version = "2.2.0-beta.1"
+version = "2.2.0"
 description = "Cross-platform OneDrive & SharePoint file manager"
 authors = ["ShareOneList Contributors"]
 edition = "2021"

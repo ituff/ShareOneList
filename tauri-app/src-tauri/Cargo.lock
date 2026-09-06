@@ -3600,7 +3600,7 @@ dependencies = [
 
 [[package]]
 name = "share-one-list"
-version = "2.2.0-beta.1"
+version = "2.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
