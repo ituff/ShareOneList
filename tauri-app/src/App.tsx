@@ -61,14 +61,13 @@ function App() {
           <div className="flex shrink-0 items-center justify-end px-3 pt-2">
             <NotificationBell />
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-6 pt-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-6 pt-2">
             <MainContent />
           </div>
         </main>
       </div>
       <ToastContainer />
       <ReloginDialog />
-      <NotificationBell />
       <UpdateBubble />
     </Suspense>
   );

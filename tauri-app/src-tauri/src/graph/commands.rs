@@ -1039,21 +1039,7 @@ pub async fn get_text_content(
     };
 
     let client = GraphClient::new(env);
-    let url = format!(
-        "{}/drives/{}/items/{}/content",
-        client.base_url(),
-        drive_id,
-        item_id
-    );
-
-    let response = client
-        .request_with_retry(&token, |http, tkn| http.get(&url).bearer_auth(tkn))
-        .await?;
-    let bytes = response.bytes().await.map_err(|e| AppError::Network {
-        message: format!("Failed to read file content: {}", e),
-        retryable: true,
-    })?;
-
+    let bytes = download_item_bytes(&client, &token, &drive_id, &item_id).await?;
     if bytes.len() > 2 * 1024 * 1024 {
         return Err(AppError::Validation {
             message: "File is too large for text preview".to_string(),
@@ -1062,6 +1048,60 @@ pub async fn get_text_content(
     }
 
     Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+/// Download a drive item's raw content bytes.
+async fn download_item_bytes(
+    client: &GraphClient,
+    token: &str,
+    drive_id: &str,
+    item_id: &str,
+) -> Result<Vec<u8>, AppError> {
+    let url = format!(
+        "{}/drives/{}/items/{}/content",
+        client.base_url(),
+        drive_id,
+        item_id
+    );
+
+    let response = client
+        .request_with_retry(token, |http, tkn| http.get(&url).bearer_auth(tkn))
+        .await?;
+    response.bytes().await.map_err(|e| AppError::Network {
+        message: format!("Failed to read file content: {}", e),
+        retryable: true,
+    }).map(|b| b.to_vec())
+}
+
+/// Read a file's content and extract plain text for AI context injection.
+/// Routes by extension: docx/pptx/xlsx/pdf are parsed into text; everything
+/// else is treated as UTF-8 text.
+#[tauri::command]
+pub async fn extract_file_text(
+    cloud_env: String,
+    drive_id: String,
+    item_id: String,
+    file_name: String,
+    home_account_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+) -> Result<String, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+
+    let client = GraphClient::new(env);
+    let bytes = download_item_bytes(&client, &token, &drive_id, &item_id).await?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "File is too large for text extraction".to_string(),
+            field: "item_id".to_string(),
+        });
+    }
+
+    crate::content::extract_from_bytes(&file_name, &bytes)
 }
 
 /// Discover SharePoint sites visible to the account. Combines followed sites,

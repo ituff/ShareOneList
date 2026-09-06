@@ -38,7 +38,7 @@
     "send": "Send",
     "defaultModelSuffix": " (default)",
     "thinking": "Thinking…",
-    "reasoningTitle": "Reasoning process",
+    "reasoningTitle": "Thinking",
     "allAccounts": "All accounts",
     "accountsCount": "{{count}} accounts",
     "selectAllAccounts": "Select all accounts",
@@ -68,7 +68,12 @@
     "searchTabPlaceholder": "Search across your accounts…",
     "historyTitle": "History",
     "newChat": "New chat",
-    "historyEmpty": "No conversations yet."
+    "historyEmpty": "No conversations yet.",
+    "chatSearch": "Search chats",
+    "recentChats": "Recent",
+    "noChatMatches": "No matching chats",
+    "durationSeconds": "{{n}}s",
+    "durationMinutes": "{{m}}m {{s}}s"
   },
   "files": {
     "title": "Files",

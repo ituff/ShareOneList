@@ -128,6 +128,121 @@ export interface AppConfig {
   segmentDownloadConcurrency: number;
 }
 
+// ─── LLM Providers (AI assistant) ───────────────────────────────────────────
+
+/** Wire protocol of the model provider endpoint. */
+export type LlmProviderKind = "openai_compatible" | "azure_openai";
+
+/** Built-in provider presets; values only pre-fill the config form. */
+export type LlmProviderPreset =
+  | "openai"
+  | "azure-openai"
+  | "deepseek"
+  | "dashscope"
+  | "moonshot"
+  | "zhipu"
+  | "ollama"
+  | "custom";
+
+/** A model exposed by a provider. For Azure, modelId is the deployment name. */
+export interface LlmModelConfig {
+  id: string;
+  modelId: string;
+  displayName: string;
+}
+
+/** Reference to one model across all providers. */
+export interface LlmModelRef {
+  providerId: string;
+  modelId: string;
+}
+
+/** A configured model provider. The API key itself is stored in the keyring. */
+export interface LlmProviderConfig {
+  id: string;
+  name: string;
+  preset: LlmProviderPreset;
+  kind: LlmProviderKind;
+  baseUrl: string;
+  apiVersion?: string | null;
+  models: LlmModelConfig[];
+  /** True when an API key exists in the keyring. */
+  hasApiKey: boolean;
+}
+
+/** Root of the persisted LLM configuration. */
+export interface LlmConfig {
+  providers: LlmProviderConfig[];
+  defaultModel: LlmModelRef | null;
+}
+
+/** LLM config plus masked key previews keyed by provider id. */
+export interface LlmConfigSnapshot {
+  config: LlmConfig;
+  maskedKeys: Record<string, string>;
+}
+
+/** A single conversation message. */
+export interface LlmChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+/** A cloud file surfaced to the model as context for the current question,
+ * found by searching the user's OneDrive / SharePoint drives. */
+export interface LlmContextFile {
+  name: string;
+  path: string;
+  webUrl: string;
+  accountName: string;
+  /** Truncated text content for small text-based files; null for name-only hits. */
+  excerpt?: string | null;
+}
+
+// ─── Chat history (SQLite persistence) ──────────────────────────────────────
+
+/** A cloud file attached to a persisted chat message (citation chips). */
+export interface StoredContextFile {
+  item: DriveItem;
+  driveId: string;
+  cloudEnv: CloudEnvironment;
+  homeAccountId: string;
+  accountName: string;
+  path: string;
+  excerpt?: string | null;
+}
+
+/** One persisted chat message. */
+export interface StoredChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  reasoning?: string | null;
+  contextFiles: StoredContextFile[];
+  createdAt: number;
+}
+
+/** Conversation list entry. */
+export interface ChatConversationMeta {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+
+/** A conversation with its full message list. */
+export interface ChatConversationDetail {
+  id: string;
+  messages: StoredChatMessage[];
+}
+
+/** Streaming chat event payload pushed from the backend. */
+export interface LlmChatEvent {
+  requestId: string;
+  /** "reasoning" carries chain-of-thought from reasoning models. */
+  kind: "delta" | "reasoning" | "done" | "error";
+  delta?: string | null;
+  message?: string | null;
+}
+
 /** A persisted account entry linking a user to a specific drive. */
 /** Whether a Microsoft identity is a consumer or a work/school account. */
 export type AccountType = "personal" | "organization";
