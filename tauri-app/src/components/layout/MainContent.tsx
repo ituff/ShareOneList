@@ -18,6 +18,8 @@ import { useAuthStore } from "../../stores/authStore";
 import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
+import { HomePage } from "../home/HomePage";
+import { LlmSettings } from "../settings/LlmSettings";
 import type {
   AccountEntry,
   CloudEnvironment,
@@ -26,16 +28,6 @@ import type {
   Site,
   TabState,
 } from "../../lib/types";
-
-function HomePage() {
-  const { t } = useTranslation();
-  return (
-    <div className="space-y-2">
-      <h2 className="text-2xl font-bold text-foreground">{t("home.title")}</h2>
-      <p className="text-muted-foreground">{t("home.welcome")}</p>
-    </div>
-  );
-}
 
 /** Navigation steps within the files page (before a tab is opened). */
 type FilesNavState =
@@ -333,6 +325,8 @@ function SettingsPage() {
         </select>
       </section>
 
+      <LlmSettings />
+
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.downloads")}</h3>
         <label className="text-sm text-muted-foreground" htmlFor="segment-concurrency-setting">
@@ -394,7 +388,13 @@ export function MainContent() {
 
   switch (activeSection) {
     case "home":
-      return <HomePage />;
+      // key forces a remount per section: initialMode would otherwise be
+      // ignored when React reuses the HomePage instance across sections.
+      return <HomePage key="home" />;
+    case "askai":
+      return <HomePage key="askai" initialMode="chat" />;
+    case "search":
+      return <HomePage key="search" initialMode="search" />;
     case "files":
       return <FilesPage />;
     case "bookmarks":

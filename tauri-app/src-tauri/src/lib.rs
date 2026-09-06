@@ -1,8 +1,11 @@
 pub mod auth;
 pub mod config;
+pub mod content;
 pub mod errors;
 pub mod graph;
+pub mod llm;
 pub mod models;
+pub mod store;
 pub mod tools;
 pub mod transfer;
 
@@ -71,6 +74,11 @@ pub fn run() {
                 app_data_dir.join("downloads"),
             )));
             app.manage(Mutex::new(UploadEngine::new(app.handle().clone())));
+            app.manage(llm::config::LlmConfigManager::new(app_data_dir.clone()));
+            app.manage(llm::commands::ChatRegistry::default());
+            app.manage(store::chat_history::ChatHistoryStore::new(
+                app_data_dir.clone(),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -96,6 +104,7 @@ pub fn run() {
             graph::commands::get_item_size,
             graph::commands::get_item_properties,
             graph::commands::get_text_content,
+            graph::commands::extract_file_text,
             graph::commands::get_sharepoint_sites,
             graph::commands::get_site_drives,
             graph::commands::get_meeting_recordings,
@@ -117,6 +126,19 @@ pub fn run() {
             tools::commands::push_to_downloader,
             tools::commands::check_update,
             tools::commands::perform_update,
+            llm::commands::get_llm_config,
+            llm::commands::save_llm_provider,
+            llm::commands::delete_llm_provider,
+            llm::commands::set_default_model,
+            llm::commands::test_llm_connection,
+            llm::commands::list_llm_models,
+            llm::commands::llm_chat,
+            llm::commands::llm_chat_cancel,
+            store::commands::chat_list_conversations,
+            store::commands::chat_open_conversation,
+            store::commands::chat_new_conversation,
+            store::commands::chat_append_message,
+            store::commands::chat_delete_conversation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

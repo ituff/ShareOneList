@@ -501,3 +501,160 @@ export function checkUpdate(): Promise<UpdateInfo | null> {
 export function performUpdate(version: string): Promise<void> {
   return invoke<void>("perform_update", { version });
 }
+
+// ─── LLM Providers (AI assistant) ───────────────────────────────────────────
+
+import type {
+  LlmChatMessage,
+  LlmConfigSnapshot,
+  LlmContextFile,
+  LlmProviderConfig,
+} from "./types";
+
+/** Load the LLM provider configuration with masked key previews. */
+export function getLlmConfig(): Promise<LlmConfigSnapshot> {
+  return invoke<LlmConfigSnapshot>("get_llm_config");
+}
+
+/**
+ * Create or update a provider. `apiKey` semantics: null keeps the stored
+ * key unchanged, empty string clears it, a non-empty value stores a new key.
+ */
+export function saveLlmProvider(
+  provider: LlmProviderConfig,
+  apiKey?: string | null
+): Promise<LlmConfigSnapshot> {
+  return invoke<LlmConfigSnapshot>("save_llm_provider", {
+    provider,
+    apiKey: apiKey ?? null,
+  });
+}
+
+/** Delete a provider and its stored key. */
+export function deleteLlmProvider(providerId: string): Promise<LlmConfigSnapshot> {
+  return invoke<LlmConfigSnapshot>("delete_llm_provider", { providerId });
+}
+
+/** Set the default model after backend validation. */
+export function setDefaultModel(providerId: string, modelId: string): Promise<LlmConfigSnapshot> {
+  return invoke<LlmConfigSnapshot>("set_default_model", {
+    providerId,
+    modelId,
+  });
+}
+
+/** Send a minimal chat request to verify connectivity and credentials. */
+export function testLlmConnection(
+  provider: LlmProviderConfig,
+  apiKey?: string | null
+): Promise<void> {
+  return invoke<void>("test_llm_connection", { provider, apiKey: apiKey ?? null });
+}
+
+/** Start a streaming chat request; returns the request id to listen for. */
+export function llmChat(
+  providerId: string,
+  modelId: string,
+  messages: LlmChatMessage[],
+  requestId: string,
+  contextFiles: LlmContextFile[],
+  reasoningEffort?: "low" | "medium" | "high"
+): Promise<string> {
+  return invoke<string>("llm_chat", {
+    providerId,
+    modelId,
+    messages,
+    requestId,
+    contextFiles,
+    reasoningEffort: reasoningEffort ?? null,
+  });
+}
+
+/** Cancel an in-flight chat request; unknown ids are ignored. */
+export function cancelLlmChat(requestId: string): Promise<void> {
+  return invoke<void>("llm_chat_cancel", { requestId });
+}
+
+/**
+ * Extract a human-readable message from a rejected Tauri command error.
+ * Backend AppError values arrive as serialized objects like
+ * { type: "Validation", message: "...", field: "..." }; fall back to
+ * String(e) for anything else.
+ */
+export function formatAppError(e: unknown): string {
+  if (e && typeof e === "object" && "message" in e) {
+    const message = (e as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  if (typeof e === "string" && e) return e;
+  return String(e);
+}
+
+/** Generate a request id for a chat request (see llm_chat). */
+export function newLlmRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Fetch the model ids the provider API reports as available. */
+export function listLlmModels(
+  provider: LlmProviderConfig,
+  apiKey?: string | null
+): Promise<string[]> {
+  return invoke<string[]>("list_llm_models", { provider, apiKey: apiKey ?? null });
+}
+
+/**
+ * Read a file's content and extract plain text (docx/pptx/xlsx/pdf are
+ * parsed; other files are treated as UTF-8 text) for AI context injection.
+ */
+export function extractFileText(
+  driveId: string,
+  itemId: string,
+  fileName: string,
+  cloudEnv: CloudEnvironment,
+  homeAccountId: string
+): Promise<string> {
+  return invoke<string>("extract_file_text", {
+    driveId,
+    itemId,
+    fileName,
+    cloudEnv,
+    homeAccountId,
+  });
+}
+
+// ─── Chat history (SQLite persistence) ──────────────────────────────────────
+
+import type {
+  ChatConversationDetail,
+  ChatConversationMeta,
+  StoredChatMessage,
+} from "./types";
+
+/** List all conversations, most recently updated first. */
+export function chatListConversations(): Promise<ChatConversationMeta[]> {
+  return invoke<ChatConversationMeta[]>("chat_list_conversations");
+}
+
+/** Open a conversation by id; null opens (or creates) the latest one. */
+export function chatOpenConversation(id: string | null): Promise<ChatConversationDetail> {
+  return invoke<ChatConversationDetail>("chat_open_conversation", { conversationId: id });
+}
+
+/** Start a new empty conversation; returns its id. */
+export function chatNewConversation(): Promise<string> {
+  return invoke<string>("chat_new_conversation");
+}
+
+/** Append a message to a conversation. */
+export function chatAppendMessage(
+  conversationId: string,
+  message: StoredChatMessage
+): Promise<void> {
+  return invoke<void>("chat_append_message", { conversationId, message });
+}
+
+/** Delete a conversation and its messages; unknown ids are ignored. */
+export function chatDeleteConversation(id: string): Promise<void> {
+  return invoke<void>("chat_delete_conversation", { conversationId: id });
+}

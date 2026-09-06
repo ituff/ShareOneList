@@ -38,7 +38,7 @@
     "send": "发送",
     "defaultModelSuffix": "（默认）",
     "thinking": "思考中…",
-    "reasoningTitle": "思考过程",
+    "reasoningTitle": "思考",
     "allAccounts": "全部账号",
     "accountsCount": "{{count}} 个账号",
     "selectAllAccounts": "全选账号",
@@ -68,7 +68,12 @@
     "searchTabPlaceholder": "搜索你所有账号中的文件…",
     "historyTitle": "历史",
     "newChat": "新对话",
-    "historyEmpty": "暂无历史会话。"
+    "historyEmpty": "暂无历史会话。",
+    "chatSearch": "搜索对话",
+    "recentChats": "最近",
+    "noChatMatches": "没有匹配的对话",
+    "durationSeconds": "{{n}} 秒",
+    "durationMinutes": "{{m}} 分 {{s}} 秒"
   },
   "files": {
     "title": "文件",
