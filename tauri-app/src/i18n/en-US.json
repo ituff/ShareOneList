@@ -73,7 +73,10 @@
     "recentChats": "Recent",
     "noChatMatches": "No matching chats",
     "durationSeconds": "{{n}}s",
-    "durationMinutes": "{{m}}m {{s}}s"
+    "durationMinutes": "{{m}}m {{s}}s",
+    "memorySaved": "Remembered: {{content}}",
+    "memoryForgotten": "Deleted {{count}} memories.",
+    "memoryForgetNone": "No memories match \"{{keyword}}\"."
   },
   "files": {
     "title": "Files",
@@ -435,5 +438,33 @@
     "fetchModels": "Fetch available models",
     "fetchingModels": "Fetching…",
     "modelsAvailableHint": "{{count}} models available — type in the model id field to fuzzy-search."
+  },
+  "memory": {
+    "title": "AI Memory",
+    "enabled": "Enabled",
+    "privacyNotice": "Memories are distilled from your conversations and sent to the model provider with each question. Manage or delete them here at any time.",
+    "extractEvery": "Extract after",
+    "extractEveryOption": "{{count}} new messages",
+    "empty": "No memories yet. They accumulate automatically as you chat.",
+    "pinned": "Pinned",
+    "disabled": "Disabled",
+    "useCount": "used {{count}}×",
+    "disable": "Disable",
+    "enable": "Enable",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "edit": "Edit",
+    "delete": "Delete",
+    "saveEdit": "Save",
+    "cancel": "Cancel",
+    "newPlaceholder": "Add a memory manually…",
+    "add": "Add",
+    "forgetPlaceholder": "Delete memories containing keyword…",
+    "forget": "Forget",
+    "forgotCount": "Deleted {{count}} memories.",
+    "extractConversationPlaceholder": "Conversation id to extract from…",
+    "extractNow": "Extract now",
+    "extracting": "Extracting…",
+    "extracted": "Extraction complete, {{count}} memories stored."
   }
 }

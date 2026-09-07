@@ -20,6 +20,8 @@ import {
   catalogRecordHits,
   cancelLlmChat,
   chatAppendMessage,
+  memorySave,
+  memorySearchAndDelete,
   chatDeleteConversation,
   chatListConversations,
   chatNewConversation,
@@ -522,7 +524,7 @@ async function gatherCloudContext(
 }
 
 interface ChatEntry {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "notice";
   content: string;
   /** Cloud files that were provided as context for this message; rendered
    * as clickable citation chips. */
@@ -1250,12 +1252,55 @@ function ChatView() {
   const send = async (textOverride?: string) => {
     const text = (textOverride ?? input).trim();
     if (!text || busy) return;
+
+    // Explicit memory commands are handled locally, never sent to the model.
+    if (text.startsWith("#remember ") || text.startsWith("#forget ")) {
+      const [command, ...rest] = text.split(" ");
+      const argument = rest.join(" ").trim();
+      setInput("");
+      if (command === "#remember") {
+        if (!argument) return;
+        try {
+          await memorySave("", argument, conversationIdRef.current);
+          setEntries((prev) => [
+            ...prev,
+            { role: "notice", content: t("home.memorySaved", { content: argument }) },
+          ]);
+        } catch (e) {
+          setEntries((prev) => [
+            ...prev,
+            { role: "notice", content: formatAppError(e) },
+          ]);
+        }
+      } else {
+        if (!argument) return;
+        try {
+          const removed = await memorySearchAndDelete(argument);
+          setEntries((prev) => [
+            ...prev,
+            {
+              role: "notice",
+              content: removed > 0
+                ? t("home.memoryForgotten", { count: removed })
+                : t("home.memoryForgetNone", { keyword: argument }),
+            },
+          ]);
+        } catch (e) {
+          setEntries((prev) => [
+            ...prev,
+            { role: "notice", content: formatAppError(e) },
+          ]);
+        }
+      }
+      return;
+    }
+
     const [providerId, modelId] = selectedValue.split(":");
     if (!providerId || !modelId) return;
 
     const history: LlmChatMessage[] = entries
-      .filter((e) => !e.error)
-      .map((e) => ({ role: e.role, content: e.content }));
+      .filter((e) => !e.error && e.role !== "notice")
+      .map((e) => ({ role: e.role as "user" | "assistant", content: e.content }));
     const messages = [...history, { role: "user", content: text } as LlmChatMessage];
 
     setInput("");
@@ -1479,7 +1524,12 @@ function ChatView() {
             {t("home.chatEmpty")}
           </p>
         )}
-        {entries.map((entry, index) => (
+        {entries.map((entry, index) =>
+          entry.role === "notice" ? (
+            <p key={index} className="text-center text-xs text-muted-foreground">
+              {entry.content}
+            </p>
+          ) : (
           <div
             key={index}
             className={`flex flex-col ${entry.role === "user" ? "items-end" : "items-start"}`}
@@ -1561,7 +1611,8 @@ function ChatView() {
               );
             })()}
           </div>
-        ))}
+          )
+        )}
         {/* Waiting for the model's first token: shown below the question it
             belongs to, on the assistant's side of the conversation. */}
         {busy && entries[entries.length - 1]?.role === "user" && (

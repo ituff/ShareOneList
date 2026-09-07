@@ -20,6 +20,7 @@ import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
 import { HomePage } from "../home/HomePage";
 import { LlmSettings } from "../settings/LlmSettings";
+import { MemorySettings } from "../settings/MemorySettings";
 import type {
   AccountEntry,
   CloudEnvironment,
@@ -326,6 +327,8 @@ function SettingsPage() {
       </section>
 
       <LlmSettings />
+
+      <MemorySettings />
 
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.downloads")}</h3>

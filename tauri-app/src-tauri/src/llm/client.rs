@@ -41,6 +41,7 @@ pub struct LlmContextFile {
 pub fn build_system_prompt(
     context_files: &[LlmContextFile],
     location_hints: &[String],
+    memories: &[String],
 ) -> String {
     let mut prompt = String::from(
         "You are the AI assistant inside ShareOneList, a OneDrive / SharePoint file \
@@ -85,6 +86,15 @@ the file list above is insufficient):\n",
         );
         for hint in location_hints {
             prompt.push_str(&format!("- {hint}\n"));
+        }
+    }
+    if !memories.is_empty() {
+        prompt.push_str(
+            "\nKnown user context (from memory; reference naturally where relevant \
+— the list is not exhaustive, and do not recite that you remember):\n",
+        );
+        for memory in memories {
+            prompt.push_str(&format!("- {memory}\n"));
         }
     }
     prompt
@@ -260,6 +270,80 @@ pub async fn test_connection(provider: &LlmProviderConfig, api_key: &str) -> Res
             status_code: status.as_u16(),
         })
     }
+}
+
+/// Runs a single non-streaming completion and returns the assistant text
+/// (used by memory extraction; keep max_tokens small).
+pub async fn complete_once(
+    provider: &LlmProviderConfig,
+    api_key: &str,
+    messages: &[LlmChatMessage],
+    max_tokens: u32,
+) -> Result<String, AppError> {
+    let model = provider
+        .models
+        .first()
+        .map(|m| m.model_id.clone())
+        .unwrap_or_default();
+    if model.is_empty() {
+        return Err(AppError::Validation {
+            message: "provider has no model configured".into(),
+            field: "models".into(),
+        });
+    }
+    let url = chat_url(provider, &model)?;
+    let client = http_client()?;
+    let mut request = client.post(&url).json(&ChatRequest {
+        model: &model,
+        messages,
+        stream: false,
+        max_tokens: Some(max_tokens),
+        reasoning_effort: None,
+    });
+    for (name, value) in headers_for(provider, api_key) {
+        request = request.header(name, value);
+    }
+    let response = request.send().await.map_err(|e| AppError::Network {
+        message: e.to_string(),
+        retryable: false,
+    })?;
+    let status = response.status();
+    if !status.is_success() {
+        let snippet: String = response
+            .text()
+            .await
+            .unwrap_or_default()
+            .chars()
+            .take(300)
+            .collect();
+        return Err(AppError::GraphApi {
+            message: format!("completion failed (HTTP {}): {}", status.as_u16(), snippet),
+            status_code: status.as_u16(),
+        });
+    }
+    #[derive(Deserialize)]
+    struct CompletionResponse {
+        choices: Vec<CompletionChoice>,
+    }
+    #[derive(Deserialize)]
+    struct CompletionChoice {
+        #[serde(default)]
+        message: CompletionMessage,
+    }
+    #[derive(Deserialize, Default)]
+    struct CompletionMessage {
+        #[serde(default)]
+        content: Option<String>,
+    }
+    let body: CompletionResponse = response.json().await.map_err(|e| AppError::GraphApi {
+        message: format!("unexpected completion response: {}", e),
+        status_code: status.as_u16(),
+    })?;
+    Ok(body
+        .choices
+        .first()
+        .and_then(|c| c.message.content.clone())
+        .unwrap_or_default())
 }
 
 fn headers_for(provider: &LlmProviderConfig, api_key: &str) -> Vec<(String, String)> {
@@ -760,7 +844,7 @@ mod system_prompt_tests {
     // Feature: ai-assistant, Property 7: grounding rule is always present
     #[test]
     fn system_prompt_always_requires_cloud_first() {
-        let empty = build_system_prompt(&[], &[]);
+        let empty = build_system_prompt(&[], &[], &[]);
         assert!(empty.contains("(none)"));
         // The consent rule must appear with and without context files.
         assert!(empty.contains("Ask the user whether to answer from internet"));
@@ -782,7 +866,7 @@ mod system_prompt_tests {
                 excerpt: Some("配方 B 配比：A 组分 60%".into()),
             },
         ];
-        let with_files = build_system_prompt(&files, &["AE&TS/03. TLOB".to_string()]);
+        let with_files = build_system_prompt(&files, &["AE&TS/03. TLOB".to_string()], &["用户常用 DeepSeek".to_string()]);
         assert!(with_files.contains("TLOB report 2025.pdf"));
         assert!(with_files.contains("AE&TS/03. TLOB"));
         assert!(with_files.contains("[account: work]"));
@@ -793,7 +877,7 @@ mod system_prompt_tests {
         assert!(with_files.contains("- AE&TS/03. TLOB"));
 
         // Empty hints must not add the section at all.
-        let no_hints = build_system_prompt(&files, &[]);
+        let no_hints = build_system_prompt(&files, &[], &["用户常用 DeepSeek".to_string()]);
         assert!(!no_hints.contains("likely related"));
     }
 }

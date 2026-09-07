@@ -62,6 +62,15 @@ pub fn run() {
             app.manage(config_manager);
             let auth_module = Mutex::new(AuthModule::new());
             app.manage(auth_module);
+            app.manage(std::sync::Arc::new(store::chat_history::ChatHistoryStore::new(
+                app_data_dir.clone(),
+            )));
+            app.manage(std::sync::Arc::new(store::memory::MemoryStore::new(
+                app_data_dir.clone(),
+            )));
+            let extract_lock: llm::commands::ExtractLock =
+                std::sync::Arc::new(tokio::sync::Mutex::new(()));
+            app.manage(extract_lock);
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let auth_state = app_handle.state::<Mutex<AuthModule>>();
@@ -147,6 +156,14 @@ pub fn run() {
             store::commands::chat_new_conversation,
             store::commands::chat_append_message,
             store::commands::chat_delete_conversation,
+            store::commands::memory_list,
+            store::commands::memory_save,
+            store::commands::memory_delete,
+            store::commands::memory_set_enabled,
+            store::commands::memory_set_pinned,
+            store::commands::memory_search_and_delete,
+            store::commands::memory_extract_now,
+            store::commands::memory_set_config,
             catalog::commands::catalog_register_drive,
             catalog::commands::catalog_unregister_drive,
             catalog::commands::catalog_status,
