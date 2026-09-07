@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import type {
+  CatalogHit,
+  CatalogHitInput,
   ChatConversationMeta,
   CloudEnvironment,
   DriveItem,
@@ -13,6 +15,9 @@ import type {
   StoredContextFile,
 } from "../../lib/types";
 import {
+  catalogQuery,
+  catalogRecordAiRead,
+  catalogRecordHits,
   cancelLlmChat,
   chatAppendMessage,
   chatDeleteConversation,
@@ -274,6 +279,8 @@ function EffortPicker({
 
 /** How many cloud file hits are injected into the system prompt per question. */
 const CONTEXT_FILE_LIMIT = 8;
+/** How many catalog-selected drives get searched per question. */
+const GROUNDING_DRIVE_LIMIT = 4;
 /** How many small text files get their content read into the prompt. */
 const CONTEXT_READ_LIMIT = 3;
 /** Max characters of one file excerpt. */
@@ -327,32 +334,152 @@ function toLlmContextFile(file: ContextFile): LlmContextFile {
 }
 
 /** Searches the given accounts' drives for the question so the model can
- * ground its answer in the user's cloud files. Small text files get their
- * content read (truncated) into the prompt. Search/read failures are
- * ignored — an empty context is valid (the model will then ask before
- * falling back to public knowledge). */
+ * ground its answer in the user's cloud files.
+ *
+ * Grounding v2: the drive catalog is queried first to pick the drives most
+ * likely relevant (visit-weighted, across OneDrives AND SharePoint
+ * libraries). Each search keyword runs separately per candidate drive
+ * (Graph search is weak on long CJK queries). Without catalog hits the
+ * behavior falls back to per-account OneDrive search. Small text files get
+ * their content read (truncated). Search/read failures are ignored. */
 async function gatherCloudContext(
   query: string,
   accounts: { homeAccountId: string; driveId: string; cloudType: CloudEnvironment; displayName: string; alias?: string | null }[]
-): Promise<ContextFile[]> {
-  const results = await Promise.all(
-    accounts.map(async (account) => {
-      try {
-        const items = await searchFiles(account.driveId, query, "global", account.cloudType);
-        return items.map((item) => ({
-          item,
-          driveId: account.driveId,
-          cloudEnv: account.cloudType,
-          homeAccountId: account.homeAccountId,
+): Promise<{ files: ContextFile[]; locationHints: string[] }> {
+  const keywords = query
+    .split(/[\s,，。;；、?？!！]+/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+
+  // Catalog-first candidate drive selection.
+  let catalogHits: CatalogHit[] = [];
+  try {
+    catalogHits = await catalogQuery(
+      keywords,
+      accounts.map((a) => ({ accountId: a.homeAccountId, cloudEnv: a.cloudType })),
+      20
+    );
+  } catch {
+    catalogHits = [];
+  }
+
+  interface Candidate {
+    accountId: string;
+    driveId: string;
+    cloudEnv: CloudEnvironment;
+    accountName: string;
+    weight: number;
+  }
+  let candidates: Candidate[] = [];
+  const locationHints: string[] = [];
+  if (catalogHits.length > 0) {
+    // Aggregate hits per drive, weighted by visit counts.
+    const byDrive = new Map<string, Candidate & { hits: CatalogHit[] }>();
+    for (const hit of catalogHits) {
+      const key = `${hit.accountId}:${hit.driveId}`;
+      let entry = byDrive.get(key);
+      if (!entry) {
+        const account = accounts.find((a) => a.homeAccountId === hit.accountId);
+        if (!account) continue; // only currently-logged-in accounts
+        entry = {
+          accountId: hit.accountId,
+          driveId: hit.driveId,
+          cloudEnv: hit.cloudEnv as CloudEnvironment,
           accountName: account.alias || account.displayName,
-          path: item.parentReference?.path ?? "",
-        }));
-      } catch {
-        return [];
+          weight: 0,
+          hits: [],
+        };
+        byDrive.set(key, entry);
       }
+      entry.weight += hit.visitCount + 1;
+      entry.hits.push(hit);
+      if (hit.kind === "folder" && locationHints.length < 5) {
+        locationHints.push(
+          hit.siteName ? `${hit.siteName}/${hit.path}` : hit.path
+        );
+      }
+    }
+    candidates = [...byDrive.values()]
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, GROUNDING_DRIVE_LIMIT)
+      .map(({ accountId, driveId, cloudEnv, accountName, weight }) => ({
+        accountId,
+        driveId,
+        cloudEnv,
+        accountName,
+        weight,
+      }));
+  }
+
+  const effectiveCandidates: Candidate[] =
+    candidates.length > 0
+      ? candidates
+      : accounts.map((a) => ({
+          accountId: a.homeAccountId,
+          driveId: a.driveId,
+          cloudEnv: a.cloudType,
+          accountName: a.alias || a.displayName,
+          weight: 0,
+        }));
+
+  const searchTerms = keywords.length > 0 ? keywords.slice(0, 4) : [query];
+  const results = await Promise.all(
+    effectiveCandidates.map(async (candidate) => {
+      const merged = new Map<string, ContextFile>();
+      await Promise.all(
+        searchTerms.map(async (term) => {
+          try {
+            const items = await searchFiles(candidate.driveId, term, "global", candidate.cloudEnv);
+            for (const item of items) {
+              if (!merged.has(item.id)) {
+                merged.set(item.id, {
+                  item,
+                  driveId: candidate.driveId,
+                  cloudEnv: candidate.cloudEnv,
+                  homeAccountId: candidate.accountId,
+                  accountName: candidate.accountName,
+                  path: item.parentReference?.path ?? "",
+                });
+              }
+            }
+          } catch {
+            // This drive/keyword failed — the merged set from others stands.
+          }
+        })
+      );
+      return [...merged.values()];
     })
   );
   const files: ContextFile[] = results.flat().slice(0, CONTEXT_FILE_LIMIT);
+
+  // Writebacks: hit files (with ancestor chains) and content reads.
+  const hitByDrive = new Map<string, CatalogHitInput[]>();
+  for (const file of files) {
+    const path = (file.item.parentReference?.path ?? "").replace(/^\/drive\/root:/, "");
+    const key = `${file.homeAccountId}:${file.driveId}`;
+    const list = hitByDrive.get(key) ?? [];
+    list.push({
+      path,
+      itemId: file.item.id,
+      name: file.item.name,
+      kind: file.item.isFolder ? "folder" : "file",
+      desc: "",
+    });
+    hitByDrive.set(key, list);
+  }
+  for (const [key, hits] of hitByDrive) {
+    const [accountId, driveId] = key.split(":");
+    const account = accounts.find((a) => a.homeAccountId === accountId);
+    if (!account) continue;
+    catalogRecordHits({
+      accountId,
+      cloudEnv: account.cloudType,
+      driveId,
+      source: "grounding",
+      question: query,
+      hits,
+    }).catch(() => undefined);
+  }
 
   // Read content for the first few small text/Office/PDF files, in
   // search-relevance order.
@@ -378,11 +505,20 @@ async function gatherCloudContext(
               files[i].homeAccountId
             );
       files[i] = { ...files[i], excerpt: content.slice(0, EXCERPT_CHAR_LIMIT) };
+      catalogRecordAiRead({
+        accountId: files[i].homeAccountId,
+        cloudEnv: files[i].cloudEnv,
+        driveId: files[i].driveId,
+        path: (files[i].item.parentReference?.path ?? "").replace(/^\/drive\/root:/, ""),
+        itemId: files[i].item.id,
+        name: files[i].item.name,
+        desc: query.slice(0, 60),
+      }).catch(() => undefined);
     } catch {
       // Unreadable (permissions, parse failure, …) — keep name-only.
     }
   }
-  return files;
+  return { files, locationHints };
 }
 
 interface ChatEntry {
@@ -1131,7 +1267,7 @@ function ChatView() {
     const requestId = newLlmRequestId();
     activeRequestId.current = requestId;
     try {
-      const contextFiles = await gatherCloudContext(text, contextAccounts);
+      const { files: contextFiles, locationHints } = await gatherCloudContext(text, contextAccounts);
       // Attach the gathered files to the user's bubble as citation chips and
       // persist the user message with them.
       setEntries((prev) => {
@@ -1155,7 +1291,8 @@ function ChatView() {
         messages,
         requestId,
         contextFiles.map(toLlmContextFile),
-        effort
+        effort,
+        locationHints
       );
     } catch (e) {
       setBusy(false);

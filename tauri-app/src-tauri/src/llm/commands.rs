@@ -215,6 +215,8 @@ pub async fn llm_chat(
     // Files found by searching the user's cloud for the current question;
     // woven into the backend-owned system prompt.
     context_files: Option<Vec<LlmContextFile>>,
+    // Catalog folder paths likely relevant to the question.
+    location_hints: Option<Vec<String>>,
     // Reasoning effort for reasoning models ("low" | "medium" | "high").
     reasoning_effort: Option<String>,
     manager: State<'_, LlmConfigManager>,
@@ -262,7 +264,10 @@ pub async fn llm_chat(
 
     // The system prompt is backend-owned: strip any client-provided system
     // messages and prepend the grounding prompt with the cloud file context.
-    let system_prompt = client::build_system_prompt(&context_files.unwrap_or_default());
+    let system_prompt = client::build_system_prompt(
+        &context_files.unwrap_or_default(),
+        &location_hints.unwrap_or_default(),
+    );
     messages.retain(|m| m.role != "system");
     messages.insert(
         0,

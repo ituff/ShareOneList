@@ -558,7 +558,8 @@ export function llmChat(
   messages: LlmChatMessage[],
   requestId: string,
   contextFiles: LlmContextFile[],
-  reasoningEffort?: "low" | "medium" | "high"
+  reasoningEffort?: "low" | "medium" | "high",
+  locationHints: string[] = []
 ): Promise<string> {
   return invoke<string>("llm_chat", {
     providerId,
@@ -567,6 +568,7 @@ export function llmChat(
     requestId,
     contextFiles,
     reasoningEffort: reasoningEffort ?? null,
+    locationHints,
   });
 }
 
@@ -657,4 +659,109 @@ export function chatAppendMessage(
 /** Delete a conversation and its messages; unknown ids are ignored. */
 export function chatDeleteConversation(id: string): Promise<void> {
   return invoke<void>("chat_delete_conversation", { conversationId: id });
+}
+
+// ─── Drive Catalog ──────────────────────────────────────────────────────────
+
+import type {
+  CatalogBrowseItem,
+  CatalogDrive,
+  CatalogHit,
+  CatalogHitInput,
+} from "./types";
+
+/** Register a drive (idempotent); new/failed drives get a root-level seed. */
+export function catalogRegisterDrive(params: {
+  accountId: string;
+  cloudEnv: CloudEnvironment;
+  driveId: string;
+  kind: "onedrive" | "documentLibrary";
+  name: string;
+  siteName?: string;
+}): Promise<void> {
+  return invoke<void>("catalog_register_drive", {
+    accountId: params.accountId,
+    cloudEnv: params.cloudEnv,
+    driveId: params.driveId,
+    kind: params.kind,
+    name: params.name,
+    siteName: params.siteName ?? "",
+  });
+}
+
+/** Unregister a drive and drop its nodes. */
+export function catalogUnregisterDrive(accountId: string, driveId: string): Promise<void> {
+  return invoke<void>("catalog_unregister_drive", { accountId, driveId });
+}
+
+/** List the drive registry with statuses. */
+export function catalogStatus(): Promise<CatalogDrive[]> {
+  return invoke<CatalogDrive[]>("catalog_status");
+}
+
+/** Browse writeback: fire-and-forget after a successful folder listing. */
+export function catalogRecordBrowse(params: {
+  accountId: string;
+  cloudEnv: CloudEnvironment;
+  driveId: string;
+  folderPath: string;
+  folderName: string;
+  folderItemId: string;
+  items: CatalogBrowseItem[];
+}): Promise<void> {
+  return invoke<void>("catalog_record_browse", params);
+}
+
+/** Search/grounding hit writeback. */
+export function catalogRecordHits(params: {
+  accountId: string;
+  cloudEnv: CloudEnvironment;
+  driveId: string;
+  source: "search" | "grounding";
+  question: string;
+  hits: CatalogHitInput[];
+}): Promise<void> {
+  return invoke<void>("catalog_record_hits", params);
+}
+
+/** AI file-read writeback. */
+export function catalogRecordAiRead(params: {
+  accountId: string;
+  cloudEnv: CloudEnvironment;
+  driveId: string;
+  path: string;
+  itemId: string;
+  name: string;
+  desc: string;
+}): Promise<void> {
+  return invoke<void>("catalog_record_ai_read", params);
+}
+
+/** FTS5 catalog query scoped to the given accounts (null = all). */
+export function catalogQuery(
+  keywords: string[],
+  accounts: { accountId: string; cloudEnv: CloudEnvironment }[] | null,
+  limit = 20
+): Promise<CatalogHit[]> {
+  return invoke<CatalogHit[]>("catalog_query", { keywords, accounts, limit });
+}
+
+/** User-initiated deep index of one drive. */
+export function catalogReindex(
+  accountId: string,
+  cloudEnv: CloudEnvironment,
+  driveId: string,
+  maxDepth?: number
+): Promise<number> {
+  return invoke<number>("catalog_reindex", {
+    accountId,
+    cloudEnv,
+    driveId,
+    maxDepth: maxDepth ?? null,
+  });
+}
+
+/** Cancel an in-flight manual index. */
+export function catalogCancelIndex(accountId: string, driveId: string): Promise<void> {
+  return invoke<void>("catalog_cancel_index", { accountId, driveId });
 }

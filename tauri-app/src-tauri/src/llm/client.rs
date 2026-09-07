@@ -36,8 +36,12 @@ pub struct LlmContextFile {
 
 /// The assistant's system prompt. Encodes the grounding rule: answer from the
 /// user's cloud files first; only with the user's consent fall back to
-/// internet / public knowledge.
-pub fn build_system_prompt(context_files: &[LlmContextFile]) -> String {
+/// internet / public knowledge. `location_hints` are drive-catalog folder
+/// paths likely relevant to the question.
+pub fn build_system_prompt(
+    context_files: &[LlmContextFile],
+    location_hints: &[String],
+) -> String {
     let mut prompt = String::from(
         "You are the AI assistant inside ShareOneList, a OneDrive / SharePoint file \
 manager. The user's documents live in their own Microsoft 365 cloud (OneDrive and \
@@ -71,6 +75,16 @@ Files found in the user's cloud for the current question:\n",
             if let Some(excerpt) = &file.excerpt {
                 prompt.push_str(&format!("  excerpt: \"{}\"\n", excerpt));
             }
+        }
+    }
+    if !location_hints.is_empty() {
+        prompt.push_str(
+            "\nFolders in the user's cloud likely related to this question (from \
+their browsing history; use them to guide the user toward the right place when \
+the file list above is insufficient):\n",
+        );
+        for hint in location_hints {
+            prompt.push_str(&format!("- {hint}\n"));
         }
     }
     prompt
@@ -746,7 +760,7 @@ mod system_prompt_tests {
     // Feature: ai-assistant, Property 7: grounding rule is always present
     #[test]
     fn system_prompt_always_requires_cloud_first() {
-        let empty = build_system_prompt(&[]);
+        let empty = build_system_prompt(&[], &[]);
         assert!(empty.contains("(none)"));
         // The consent rule must appear with and without context files.
         assert!(empty.contains("Ask the user whether to answer from internet"));
@@ -768,12 +782,18 @@ mod system_prompt_tests {
                 excerpt: Some("配方 B 配比：A 组分 60%".into()),
             },
         ];
-        let with_files = build_system_prompt(&files);
+        let with_files = build_system_prompt(&files, &["AE&TS/03. TLOB".to_string()]);
         assert!(with_files.contains("TLOB report 2025.pdf"));
         assert!(with_files.contains("AE&TS/03. TLOB"));
         assert!(with_files.contains("[account: work]"));
         assert!(!with_files.contains("excerpt: \"\"")); // name-only file has no excerpt line
         assert!(with_files.contains("excerpt: \"配方 B 配比：A 组分 60%\""));
         assert!(with_files.contains("Ask the user whether to answer from internet"));
+        assert!(with_files.contains("likely related"));
+        assert!(with_files.contains("- AE&TS/03. TLOB"));
+
+        // Empty hints must not add the section at all.
+        let no_hints = build_system_prompt(&files, &[]);
+        assert!(!no_hints.contains("likely related"));
     }
 }

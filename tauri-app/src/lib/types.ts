@@ -234,6 +234,53 @@ export interface ChatConversationDetail {
   messages: StoredChatMessage[];
 }
 
+// ─── Drive Catalog ──────────────────────────────────────────────────────────
+
+/** Registry entry for one indexed drive. */
+export interface CatalogDrive {
+  accountId: string;
+  cloudEnv: string;
+  driveId: string;
+  kind: string;
+  name: string;
+  siteName: string;
+  status: string;
+  nodeCount: number;
+  lastUsedAt: number;
+}
+
+/** One item listed while browsing a folder (writeback input). */
+export interface CatalogBrowseItem {
+  itemId: string;
+  name: string;
+  path: string;
+  kind: "folder" | "file";
+}
+
+/** One search/grounding hit (writeback input). */
+export interface CatalogHitInput {
+  path: string;
+  itemId?: string;
+  name: string;
+  kind: "folder" | "file";
+  desc?: string;
+}
+
+/** One catalog query hit. */
+export interface CatalogHit {
+  accountId: string;
+  cloudEnv: string;
+  driveId: string;
+  driveName: string;
+  siteName: string;
+  path: string;
+  itemId: string;
+  name: string;
+  kind: "folder" | "file";
+  desc: string;
+  visitCount: number;
+}
+
 /** Streaming chat event payload pushed from the backend. */
 export interface LlmChatEvent {
   requestId: string;
