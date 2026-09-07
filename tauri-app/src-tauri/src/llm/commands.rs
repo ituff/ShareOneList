@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::State;
@@ -8,9 +9,14 @@ use tokio_util::sync::CancellationToken;
 use crate::errors::AppError;
 use crate::llm::client::{self, LlmChatMessage, LlmContextFile};
 use crate::llm::config::{LlmConfig, LlmConfigManager, LlmModelRef, LlmProviderConfig};
+use crate::llm::memory::{select_memories_for_prompt, MEMORY_MAX_CHARS, MEMORY_MAX_ITEMS};
+use crate::store::memory::MemoryStore;
 
 /// Live registry of in-flight chat requests for cancellation.
 pub type ChatRegistry = Mutex<HashMap<String, CancellationToken>>;
+
+/// Single-flight lock for background memory extraction (try_lock = skip).
+pub type ExtractLock = Arc<tokio::sync::Mutex<()>>;
 
 /// LLM config plus masked key previews for the UI.
 #[derive(Debug, serde::Serialize)]
@@ -220,6 +226,7 @@ pub async fn llm_chat(
     // Reasoning effort for reasoning models ("low" | "medium" | "high").
     reasoning_effort: Option<String>,
     manager: State<'_, LlmConfigManager>,
+    memory: State<'_, Arc<MemoryStore>>,
     registry: State<'_, ChatRegistry>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, AppError> {
@@ -264,9 +271,30 @@ pub async fn llm_chat(
 
     // The system prompt is backend-owned: strip any client-provided system
     // messages and prepend the grounding prompt with the cloud file context.
+    // User memories join the prompt when the feature is enabled (budgeted).
+    let memories_for_prompt = if config.memory.enabled {
+        let entries = memory
+            .enabled_for_injection(MEMORY_MAX_ITEMS)
+            .unwrap_or_default();
+        let selected = select_memories_for_prompt(
+            entries.iter().map(|m| m.content.clone()).collect(),
+            MEMORY_MAX_ITEMS,
+            MEMORY_MAX_CHARS,
+        );
+        let used_ids: Vec<String> = entries
+            .iter()
+            .filter(|m| selected.contains(&m.content))
+            .map(|m| m.id.clone())
+            .collect();
+        memory.touch_used(&used_ids);
+        selected
+    } else {
+        Vec::new()
+    };
     let system_prompt = client::build_system_prompt(
         &context_files.unwrap_or_default(),
         &location_hints.unwrap_or_default(),
+        &memories_for_prompt,
     );
     messages.retain(|m| m.role != "system");
     messages.insert(

@@ -116,6 +116,25 @@ pub struct LlmProviderConfig {
     pub has_api_key: bool,
 }
 
+/// User-memory behavior settings. Defaults keep `llm.json` files written
+/// before this feature valid (serde default on the whole struct).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LlmMemoryConfig {
+    pub enabled: bool,
+    /// Trigger extraction after this many new user messages.
+    pub extract_every: u32,
+}
+
+impl Default for LlmMemoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            extract_every: 6,
+        }
+    }
+}
+
 /// Root of `llm.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -124,6 +143,8 @@ pub struct LlmConfig {
     pub providers: Vec<LlmProviderConfig>,
     #[serde(default)]
     pub default_model: Option<LlmModelRef>,
+    #[serde(default)]
+    pub memory: LlmMemoryConfig,
 }
 
 impl LlmConfig {
@@ -280,6 +301,7 @@ mod tests {
                 provider_id: "p1".into(),
                 model_id: "gpt-4o".into(),
             }),
+            memory: Default::default(),
         };
         mgr.save(&config).unwrap();
         let loaded = mgr.load();
@@ -319,6 +341,7 @@ mod tests {
                 provider_id: "p1".into(),
                 model_id: "nope".into(),
             }),
+            memory: Default::default(),
         };
         assert!(mgr.save(&config).is_err());
 
@@ -328,6 +351,7 @@ mod tests {
                 provider_id: "ghost".into(),
                 model_id: "m1".into(),
             }),
+            memory: Default::default(),
         };
         assert!(mgr.save(&dangling_provider).is_err());
     }
@@ -344,6 +368,7 @@ mod tests {
                 provider_id: "p1".into(),
                 model_id: "m1".into(),
             }),
+            memory: Default::default(),
         };
         mgr.save(&config).unwrap();
 

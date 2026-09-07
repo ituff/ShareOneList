@@ -170,10 +170,17 @@ export interface LlmProviderConfig {
   hasApiKey: boolean;
 }
 
+/** Memory feature settings. */
+export interface LlmMemoryConfig {
+  enabled: boolean;
+  extractEvery: number;
+}
+
 /** Root of the persisted LLM configuration. */
 export interface LlmConfig {
   providers: LlmProviderConfig[];
   defaultModel: LlmModelRef | null;
+  memory: LlmMemoryConfig;
 }
 
 /** LLM config plus masked key previews keyed by provider id. */
@@ -431,3 +438,18 @@ export interface UpdateInfo {
 
 /** Search scope: current folder subtree or entire drive. */
 export type SearchScope = "local" | "global";
+
+// ─── User memory (AI assistant) ─────────────────────────────────────────────
+
+/** One persisted memory entry. */
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  sourceConversationId: string;
+  enabled: boolean;
+  pinned: boolean;
+  useCount: number;
+  lastUsedAt: number;
+  createdAt: number;
+  updatedAt: number;
+}

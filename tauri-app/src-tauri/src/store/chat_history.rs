@@ -10,8 +10,6 @@ use crate::auth::cloud_config::CloudEnvironment;
 use crate::errors::AppError;
 use crate::models::DriveItem;
 
-const SCHEMA_VERSION: i64 = 1;
-
 /// A cloud file attached to a chat message (citation chips). Mirrors the
 /// frontend `ContextFile` shape exactly so it round-trips without mapping.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -71,6 +69,11 @@ impl ChatHistoryStore {
         }
     }
 
+    /// Path of the underlying database file (shared with the memory store).
+    pub(crate) fn db_path(&self) -> &PathBuf {
+        &self.db_path
+    }
+
     fn open(&self) -> Result<Connection, AppError> {
         let conn = Connection::open(&self.db_path).map_err(|e| AppError::Config {
             message: format!("cannot open chat history database: {}", e),
@@ -79,41 +82,63 @@ impl ChatHistoryStore {
         Ok(conn)
     }
 
-    /// Schema migrations keyed by `PRAGMA user_version`; forward-only.
-    fn migrate(conn: &Connection) -> Result<(), AppError> {
+    /// Schema migrations keyed by `PRAGMA user_version`; forward-only, each
+    /// step idempotent so an interrupted upgrade can resume.
+    pub(crate) fn migrate(conn: &Connection) -> Result<(), AppError> {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|e| AppError::Config {
                 message: e.to_string(),
             })?;
-        if version >= SCHEMA_VERSION {
-            return Ok(());
+        if version < 1 {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE IF NOT EXISTS conversations (
+                     id TEXT PRIMARY KEY,
+                     title TEXT NOT NULL DEFAULT '',
+                     created_at INTEGER NOT NULL,
+                     updated_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS messages (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                     role TEXT NOT NULL,
+                     content TEXT NOT NULL DEFAULT '',
+                     reasoning TEXT,
+                     context_files TEXT NOT NULL DEFAULT '[]',
+                     created_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_messages_conversation
+                     ON messages(conversation_id, id);
+                 PRAGMA user_version = 1;
+                 COMMIT;",
+            )
+            .map_err(|e| AppError::Config {
+                message: format!("chat history migration v1 failed: {}", e),
+            })?;
         }
-        conn.execute_batch(
-            "BEGIN;
-             CREATE TABLE IF NOT EXISTS conversations (
-                 id TEXT PRIMARY KEY,
-                 title TEXT NOT NULL DEFAULT '',
-                 created_at INTEGER NOT NULL,
-                 updated_at INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS messages (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                 role TEXT NOT NULL,
-                 content TEXT NOT NULL DEFAULT '',
-                 reasoning TEXT,
-                 context_files TEXT NOT NULL DEFAULT '[]',
-                 created_at INTEGER NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS idx_messages_conversation
-                 ON messages(conversation_id, id);
-             PRAGMA user_version = 1;
-             COMMIT;",
-        )
-        .map_err(|e| AppError::Config {
-            message: format!("chat history migration failed: {}", e),
-        })
+        if version < 2 {
+            conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE IF NOT EXISTS memories (
+                     id TEXT PRIMARY KEY,
+                     content TEXT NOT NULL,
+                     source_conversation_id TEXT NOT NULL DEFAULT '',
+                     enabled INTEGER NOT NULL DEFAULT 1,
+                     pinned INTEGER NOT NULL DEFAULT 0,
+                     use_count INTEGER NOT NULL DEFAULT 0,
+                     last_used_at INTEGER NOT NULL DEFAULT 0,
+                     created_at INTEGER NOT NULL,
+                     updated_at INTEGER NOT NULL
+                 );
+                 PRAGMA user_version = 2;
+                 COMMIT;",
+            )
+            .map_err(|e| AppError::Config {
+                message: format!("chat history migration v2 failed: {}", e),
+            })?;
+        }
+        Ok(())
     }
 
     fn now() -> i64 {
@@ -333,6 +358,42 @@ impl ChatHistoryStore {
         })?;
         Ok(())
     }
+}
+
+/// Reads the last `n` messages of a conversation as chat messages for the
+/// memory-extraction window (static so the memory extractor can use it
+/// without owning a ChatHistoryStore).
+pub(crate) fn recent_messages_for_extraction(
+    db_path: &PathBuf,
+    conversation_id: &str,
+    n: usize,
+) -> Vec<crate::llm::client::LlmChatMessage> {
+    let Ok(conn) = Connection::open(db_path) else {
+        return Vec::new();
+    };
+    if ChatHistoryStore::migrate(&conn).is_err() {
+        return Vec::new();
+    }
+    let mut stmt = match conn.prepare(
+        "SELECT role, content FROM messages
+         WHERE conversation_id = ?1 AND content != ''
+         ORDER BY id DESC LIMIT ?2",
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => return Vec::new(),
+    };
+    let rows = match stmt.query_map(params![conversation_id, n as i64], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(rows) => rows,
+        Err(_) => return Vec::new(),
+    };
+    let mut messages: Vec<crate::llm::client::LlmChatMessage> = rows
+        .filter_map(|r| r.ok())
+        .map(|(role, content)| crate::llm::client::LlmChatMessage { role, content })
+        .collect();
+    messages.reverse();
+    messages
 }
 
 #[cfg(test)]

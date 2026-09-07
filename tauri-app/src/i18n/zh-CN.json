@@ -73,7 +73,10 @@
     "recentChats": "最近",
     "noChatMatches": "没有匹配的对话",
     "durationSeconds": "{{n}} 秒",
-    "durationMinutes": "{{m}} 分 {{s}} 秒"
+    "durationMinutes": "{{m}} 分 {{s}} 秒",
+    "memorySaved": "已记住：{{content}}",
+    "memoryForgotten": "已删除 {{count}} 条记忆。",
+    "memoryForgetNone": "没有匹配 \"{{keyword}}\" 的记忆。"
   },
   "files": {
     "title": "文件",
@@ -435,5 +438,33 @@
     "fetchModels": "拉取可用模型列表",
     "fetchingModels": "拉取中…",
     "modelsAvailableHint": "已获取 {{count}} 个可选模型——在模型 ID 输入框中输入即可模糊筛选。"
+  },
+  "memory": {
+    "title": "AI 记忆",
+    "enabled": "启用",
+    "privacyNotice": "记忆从你的对话中提炼，并随每次提问发送给模型服务商。可随时在此管理或删除。",
+    "extractEvery": "每",
+    "extractEveryOption": "{{count}} 条新消息",
+    "empty": "暂无记忆。聊天时会自动积累。",
+    "pinned": "已置顶",
+    "disabled": "已停用",
+    "useCount": "已使用 {{count}} 次",
+    "disable": "停用",
+    "enable": "启用",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "edit": "编辑",
+    "delete": "删除",
+    "saveEdit": "保存",
+    "cancel": "取消",
+    "newPlaceholder": "手动添加一条记忆…",
+    "add": "添加",
+    "forgetPlaceholder": "删除包含关键词的记忆…",
+    "forget": "遗忘",
+    "forgotCount": "已删除 {{count}} 条记忆。",
+    "extractConversationPlaceholder": "要提取的会话 ID…",
+    "extractNow": "立即提取",
+    "extracting": "提取中…",
+    "extracted": "提取完成，已存储 {{count}} 条记忆。"
   }
 }

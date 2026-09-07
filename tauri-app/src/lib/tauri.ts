@@ -765,3 +765,49 @@ export function catalogReindex(
 export function catalogCancelIndex(accountId: string, driveId: string): Promise<void> {
   return invoke<void>("catalog_cancel_index", { accountId, driveId });
 }
+
+// ─── User memory (AI assistant) ─────────────────────────────────────────────
+
+import type { MemoryEntry } from "./types";
+
+/** List all memories (pinned first, then most recently used). */
+export function memoryList(): Promise<MemoryEntry[]> {
+  return invoke<MemoryEntry[]>("memory_list");
+}
+
+/** Create (empty id) or update a memory; returns its id. */
+export function memorySave(
+  id: string,
+  content: string,
+  conversationId = ""
+): Promise<string> {
+  return invoke<string>("memory_save", { id, content, conversationId });
+}
+
+/** Hard-delete a memory. */
+export function memoryDelete(id: string): Promise<void> {
+  return invoke<void>("memory_delete", { id });
+}
+
+export function memorySetEnabled(id: string, enabled: boolean): Promise<void> {
+  return invoke<void>("memory_set_enabled", { id, enabled });
+}
+
+export function memorySetPinned(id: string, pinned: boolean): Promise<void> {
+  return invoke<void>("memory_set_pinned", { id, pinned });
+}
+
+/** Delete memories containing the keyword; returns how many were removed. */
+export function memorySearchAndDelete(keyword: string): Promise<number> {
+  return invoke<number>("memory_search_and_delete", { keyword });
+}
+
+/** Update the memory feature settings (persisted in llm.json). */
+export function memorySetConfig(enabled: boolean, extractEvery: number): Promise<void> {
+  return invoke<void>("memory_set_config", { enabled, extractEvery });
+}
+
+/** Run one extraction round immediately using the default model. */
+export function memoryExtractNow(conversationId: string): Promise<number> {
+  return invoke<number>("memory_extract_now", { conversationId });
+}
