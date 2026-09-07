@@ -27,9 +27,22 @@ tauri-app/
     ├── graph/               # Graph API 调用与校验
     ├── transfer/            # 下载 / 上传引擎（断点续传）
     ├── config/              # 配置持久化与旧版迁移
+    ├── llm/                 # AI 助手：供应商配置（keyring）、适配器、SSE 流式聊天
+    ├── store/               # SQLite：聊天历史（chat_history.db）、用户记忆
+    ├── content/             # Office / PDF 文本提取（docx/pptx/xlsx/pdf）
+    ├── catalog/             # Drive Catalog：跨 drive 目录地图（catalog.db + FTS5）
     └── tools/               # URL 解析、外部分发器、更新器
 
 ```
+
+前端补充：`components/home/`（首页搜索 + 问 AI 入口、聊天视图）、`components/settings/LlmSettings.tsx`（模型供应商管理）、`stores/llmStore.ts`。
+
+# AI 助手与 Drive Catalog
+
+- **LLM 接入**：任意 OpenAI 兼容供应商（内置 OpenAI / Azure / DeepSeek / 百炼等预设）。供应商配置存 `llm.json`，API Key 只进 keyring（条目 `llm_api_key_*`），接口类型分 `openai_compatible` 与 `azure_openai` 两种适配器。聊天走 SSE 流式，delta 通过 `llm-chat-event` 推送；系统提示词由后端持有（`build_system_prompt`），前端传入的 system 消息会被剥离。
+- **Grounding**：每次提问先查 Drive Catalog 选候选 drive（visit 加权前 4），对每个关键词单独执行 Graph 搜索（缓解中文长句低召回），小文本/Office/PDF 文件内容截断注入提示词，答案引用以可点击卡片呈现。云端与对话无依据时必须先询问用户再用公共知识。
+- **Drive Catalog**（catalog.db，派生数据，可整体删除重建）：以 drive 为作用域单元。**渐进式积累，不做后台爬取**——注册时仅根层种子（一次 children 调用），目录知识来自浏览回写（FileBrowser 去抖）、搜索/grounding 命中（含祖先目录链）与 AI 读取三类回写；visit_count 只增，desc 只填空。FTS5 trigram 支持中文子串，<3 字符回退 LIKE，账号隔离为硬约束。
+- **聊天历史**（chat_history.db）：会话与消息持久化， reasoning 思考过程与引用文件随消息保存；`PRAGMA user_version` 做前向迁移。两个 SQLite 文件均为派生数据，损坏即重建，禁止当作真相源。
 
 # 双云架构
 

@@ -38,20 +38,24 @@ README 以 Tauri 2 主路径为准；遇到 README 与 spec 不一致时，以 `
 ```text
 tauri-app/                         # Tauri 2 重写（主路径）
   src/
-    components/                    # 页面和组件
-    stores/                        # Zustand 状态
+    components/                    # 页面和组件（home/ 首页搜索+问AI、settings/ 模型供应商）
+    stores/                        # Zustand 状态（llmStore 等）
     hooks/                         # 主题、窗口状态、快捷键等
     i18n/                          # en-US.json / zh-CN.json
-    lib/                           # types.ts、tauri.ts、formatters.ts、validators.ts
+    lib/                           # types.ts、tauri.ts、catalogTriggers.ts 等
   src-tauri/src/
     auth/                          # OAuth2、会话、token 刷新
     graph/                         # Graph API 调用、校验
     transfer/                      # 下载 / 上传引擎
     config/                        # 配置持久化
+    llm/                           # AI 助手：供应商配置、适配器、SSE 流式聊天、系统提示词
+    store/                         # SQLite：聊天历史（chat_history.db）、用户记忆
+    content/                       # Office / PDF 文本提取
+    catalog/                       # Drive Catalog：目录地图（catalog.db + FTS5）
     tools/                         # 外部分发器、URL 解析、更新
     models.rs / errors.rs          # 共享模型和错误类型
 .kiro/steering/                    # Kiro steering
-.kiro/specs/tauri-rewrite/         # 重写 spec
+.kiro/specs/                       # 特性 spec（tauri-rewrite、ai-assistant、ai-memory、drive-catalog 等）
 ```
 
 ## 架构原则
@@ -59,7 +63,7 @@ tauri-app/                         # Tauri 2 重写（主路径）
 - Rust 后端拥有所有敏感逻辑和业务逻辑：认证、token、Graph API、文件传输、配置持久化。前端只是表现层。
 - 前端通过 `src/lib/tauri.ts` 中类型化的 invoke 封装调用后端；Rust 命令在对应模块的 `commands.rs` 中注册。新增命令时必须同时更新 Rust handler、`lib.rs` 的 `invoke_handler` 和 TypeScript 封装。
 - 下载/上传进度通过 Tauri event 推送到前端，前端 Zustand store 订阅后更新 UI，不要改成轮询。
-- Rust 模块按 `auth`、`graph`、`transfer`、`config`、`tools` 分层，不要让前端跨层直接访问 Graph。
+- Rust 模块按 `auth`、`graph`、`transfer`、`config`、`llm`、`store`、`content`、`catalog`、`tools` 分层，不要让前端跨层直接访问 Graph。
 - 前后端模型必须同步：Rust `models.rs` 与 `src/lib/types.ts` 保持同一套字段语义。
 
 ## 双云环境约束
@@ -81,6 +85,14 @@ tauri-app/                         # Tauri 2 重写（主路径）
 - `/me/drive/sharedWithMe` 依赖 OneDrive 许可证。
 
 世纪互联 SharePoint 站点发现使用 M365 Groups 流程：`/me/memberOf` → Unified Groups → `/groups/{id}/sites/root`。
+
+## AI 助手与 Drive Catalog 约定
+
+- LLM 供应商配置存 `llm.json`，API Key 只进 keyring（`llm_api_key_*` 条目），禁止写入 JSON；系统提示词由后端 `build_system_prompt` 持有，前端传入的 system 消息会被剥离。
+- 聊天流式输出走 `llm-chat-event` Tauri event（与传输进度同模式），禁止轮询。
+- Drive Catalog（catalog.db）与聊天历史（chat_history.db）均为 SQLite 派生数据，损坏即删除重建；schema 用 `PRAGMA user_version` 做前向迁移。
+- Catalog 采用渐进式积累：注册仅根层种子，目录知识来自浏览回写、搜索命中（含祖先链）与 AI 读取；禁止加入默认后台深度爬取；查询必须施加账号隔离。
+- AI 回答必须先基于用户云端文件；无依据时先询问用户再使用公共知识。
 
 ## 开发命令
 
