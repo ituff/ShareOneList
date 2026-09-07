@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Database, RefreshCw, AlertCircle } from "lucide-react";
-import { getSiteDrives } from "../../lib/tauri";
+import { catalogRegisterDrive, getSiteDrives } from "../../lib/tauri";
 import { getErrorMessage } from "../../lib/errors";
 import type { CloudEnvironment, Drive } from "../../lib/types";
 
@@ -46,6 +46,18 @@ export function DriveList({
     try {
       const result = await getSiteDrives(siteId, cloudEnv, homeAccountId);
       setDrives(result);
+      // Catalog: the user can see these document libraries, so register
+      // them (idempotent, fire-and-forget).
+      for (const drive of result) {
+        catalogRegisterDrive({
+          accountId: homeAccountId,
+          cloudEnv,
+          driveId: drive.id,
+          kind: "documentLibrary",
+          name: drive.name,
+          siteName: siteName ?? "",
+        }).catch(() => undefined);
+      }
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

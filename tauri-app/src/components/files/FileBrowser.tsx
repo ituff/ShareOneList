@@ -43,6 +43,7 @@ import {
   downloadFile,
   downloadFiles,
   downloadFolder,
+  catalogRecordBrowse,
 } from "../../lib/tauri";
 import type {
   CloudEnvironment,
@@ -172,6 +173,37 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   const [searchResults, setSearchResults] = useState<DriveItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Drive catalog: browsing a folder feeds the catalog (fire-and-forget,
+  // debounced so fast navigation collapses into one write).
+  useEffect(() => {
+    if (isLoading || !currentFolderId || items.length === 0) return;
+    // Path relative to drive root: breadcrumbs[0] is the drive root itself.
+    const relative = breadcrumbs
+      .slice(1)
+      .map((b) => b.name)
+      .join("/");
+    const folderName =
+      breadcrumbs[breadcrumbs.length - 1]?.name ?? driveName ?? "root";
+    const timer = setTimeout(() => {
+      catalogRecordBrowse({
+        accountId: homeAccountId,
+        cloudEnv,
+        driveId,
+        folderPath: relative,
+        folderName,
+        folderItemId: currentFolderId,
+        items: items.map((item) => ({
+          itemId: item.id,
+          name: item.name,
+          path: relative ? `${relative}/${item.name}` : item.name,
+          kind: item.isFolder ? "folder" : "file",
+        })),
+      }).catch(() => undefined);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFolderId, items, isLoading]);
 
   // Drag-and-drop state
   const [isDragOver, setIsDragOver] = useState(false);

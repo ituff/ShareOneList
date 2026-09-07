@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod catalog;
 pub mod config;
 pub mod content;
 pub mod errors;
@@ -74,6 +75,13 @@ pub fn run() {
                 app_data_dir.join("downloads"),
             )));
             app.manage(Mutex::new(UploadEngine::new(app.handle().clone())));
+            app.manage(std::sync::Arc::new(catalog::store::CatalogStore::new(
+                app_data_dir.clone(),
+            )));
+            let catalog_cancels: catalog::commands::CatalogCancels = std::sync::Arc::new(
+                tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            );
+            app.manage(catalog_cancels);
             app.manage(llm::config::LlmConfigManager::new(app_data_dir.clone()));
             app.manage(llm::commands::ChatRegistry::default());
             app.manage(store::chat_history::ChatHistoryStore::new(
@@ -139,6 +147,15 @@ pub fn run() {
             store::commands::chat_new_conversation,
             store::commands::chat_append_message,
             store::commands::chat_delete_conversation,
+            catalog::commands::catalog_register_drive,
+            catalog::commands::catalog_unregister_drive,
+            catalog::commands::catalog_status,
+            catalog::commands::catalog_record_browse,
+            catalog::commands::catalog_record_hits,
+            catalog::commands::catalog_record_ai_read,
+            catalog::commands::catalog_query,
+            catalog::commands::catalog_reindex,
+            catalog::commands::catalog_cancel_index,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

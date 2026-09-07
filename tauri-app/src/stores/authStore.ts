@@ -7,6 +7,7 @@ import {
   refreshAccountType,
   updateAccount,
 } from "../lib/tauri";
+import { registerAccountOneDrives } from "../lib/catalogTriggers";
 
 interface AuthState {
   /** List of connected accounts. */
@@ -74,6 +75,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         cloudType: account.cloudType.toLowerCase() as CloudEnvironment,
       }));
       set({ accounts: normalized, isLoaded: true });
+      // Catalog: register each account's OneDrive (fire-and-forget).
+      registerAccountOneDrives(normalized);
     } catch (err) {
       console.error("[authStore] Failed to load accounts:", err);
       // Mark as loaded even on failure so the app can proceed
