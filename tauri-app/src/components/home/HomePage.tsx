@@ -1507,7 +1507,7 @@ function ChatView() {
       </aside>
       )}
 
-      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden px-4">
       {listCollapsed && (
         <button
           onClick={toggleListCollapsed}
@@ -1518,7 +1518,7 @@ function ChatView() {
           <PanelLeftOpen className="h-4 w-4" />
         </button>
       )}
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-auto pb-2">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-auto pb-3">
         {entries.length === 0 && (
           <p className="pt-8 text-center text-sm text-muted-foreground">
             {t("home.chatEmpty")}
@@ -1629,7 +1629,7 @@ function ChatView() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-border bg-card p-2 shadow-sm">
+      <div className="mt-2 rounded-2xl border border-border bg-card p-2 shadow-sm">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
