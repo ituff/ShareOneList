@@ -192,7 +192,11 @@
     "segmentConcurrencyHint": "同时下载 Teams 录像分段的连接数。数值越大越快，但过高可能触发服务器限流（默认 4）。",
     "github": "项目地址",
     "followTitle": "关注「ONE生产力」",
-    "followDescription": "如果 ShareOneList 对你有帮助，欢迎关注作者的公众号「ONE生产力」，会不定期分享好用的生产力工具和使用心得。"
+    "followDescription": "如果 ShareOneList 对你有帮助，欢迎关注作者的公众号「ONE生产力」，会不定期分享好用的生产力工具和使用心得。",
+    "tabAppearance": "外观与语言",
+    "tabDownloads": "下载",
+    "tabAI": "AI 助手",
+    "tabAbout": "关于"
   },
   "accounts": {
     "addAccount": "添加账户",

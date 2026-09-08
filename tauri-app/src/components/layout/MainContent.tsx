@@ -13,7 +13,7 @@ import { SharePointSites } from "../files/SharePointSites";
 import { DriveList } from "../files/DriveList";
 import { TabBar } from "./TabBar";
 import { useTabStore } from "../../stores/tabStore";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useSettingsStore, type SettingsTab } from "../../stores/settingsStore";
 import { useAuthStore } from "../../stores/authStore";
 import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
@@ -270,6 +270,8 @@ function SettingsPage() {
   const setLanguage = useSettingsStore((s) => s.setLanguage);
   const segmentConcurrency = useSettingsStore((s) => s.segmentDownloadConcurrency);
   const setSegmentConcurrency = useSettingsStore((s) => s.setSegmentDownloadConcurrency);
+  const settingsTab = useSettingsStore((s) => s.settingsTab);
+  const setSettingsTab = useSettingsStore((s) => s.setSettingsTab);
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -283,6 +285,31 @@ function SettingsPage() {
         <p className="text-muted-foreground">{t("settings.description")}</p>
       </div>
 
+      <div className="flex gap-1 border-b border-border pb-px">
+        {(
+          [
+            ["appearance", t("settings.tabAppearance")],
+            ["downloads", t("settings.tabDownloads")],
+            ["ai", t("settings.tabAI")],
+            ["about", t("settings.tabAbout")],
+          ] as [SettingsTab, string][]
+        ).map(([tab, label]) => (
+          <button
+            key={tab}
+            onClick={() => setSettingsTab(tab)}
+            className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${
+              settingsTab === tab
+                ? "border border-b-0 border-border bg-card text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {settingsTab === "appearance" && (
+      <>
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.appearance")}</h3>
         <label className="text-sm text-muted-foreground" htmlFor="theme-setting">
@@ -325,11 +352,10 @@ function SettingsPage() {
           <option value="zh-CN">简体中文</option>
         </select>
       </section>
+      </>
+      )}
 
-      <LlmSettings />
-
-      <MemorySettings />
-
+      {settingsTab === "downloads" && (
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.downloads")}</h3>
         <label className="text-sm text-muted-foreground" htmlFor="segment-concurrency-setting">
@@ -349,7 +375,18 @@ function SettingsPage() {
         </select>
         <p className="text-xs text-muted-foreground">{t("settings.segmentConcurrencyHint")}</p>
       </section>
+      )}
 
+      {settingsTab === "ai" && (
+      <>
+      <LlmSettings />
+
+      <MemorySettings />
+      </>
+      )}
+
+      {settingsTab === "about" && (
+      <>
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">
         <h3 className="text-lg font-semibold text-foreground">{t("settings.about")}</h3>
         <p className="text-sm text-muted-foreground">{t("settings.aboutDescription")}</p>
@@ -380,6 +417,8 @@ function SettingsPage() {
           className="w-40 rounded-md border border-border"
         />
       </section>
+      </>
+      )}
 
       <UpdateChecker />
     </div>

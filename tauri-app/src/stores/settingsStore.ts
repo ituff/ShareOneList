@@ -1,4 +1,7 @@
 import { create } from "zustand";
+
+/** Sub-tab within the settings page ("ai" is deep-link target for memory editing). */
+export type SettingsTab = "appearance" | "downloads" | "ai" | "about";
 import type { AppConfig, ThemeMode, WindowState } from "../lib/types";
 import { getConfig, saveConfig } from "../lib/tauri";
 
@@ -28,6 +31,9 @@ interface SettingsState {
   setLastDownloadPath: (path: string | null) => void;
   /** Update the recording segment download concurrency and persist to backend. */
   setSegmentDownloadConcurrency: (n: number) => void;
+  /** Active sub-tab in the settings page. */
+  settingsTab: SettingsTab;
+  setSettingsTab: (tab: SettingsTab) => void;
 }
 
 /** Default window state used before config is loaded. */
@@ -56,6 +62,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastDownloadPath: null,
   segmentDownloadConcurrency: 4,
   isLoaded: false,
+  settingsTab: "appearance",
 
   loadConfig: async () => {
     try {
@@ -121,6 +128,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: path,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
     });
+  },
+
+  setSettingsTab: (tab) => {
+    set({ settingsTab: tab });
   },
 
   setSegmentDownloadConcurrency: (n) => {
