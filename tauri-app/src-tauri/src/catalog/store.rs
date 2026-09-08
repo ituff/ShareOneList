@@ -27,6 +27,19 @@ pub struct CatalogDrive {
     pub last_used_at: i64,
 }
 
+/// A catalog node as returned to the frontend (tree view / query results).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogNode {
+    pub item_id: String,
+    pub path: String,
+    pub name: String,
+    pub kind: String,
+    pub desc: String,
+    pub visit_count: i64,
+    pub last_visited: i64,
+}
+
 /// A node to write into the catalog. `desc` is optional one-line context.
 #[derive(Debug, Clone)]
 pub struct CatalogNodeInput {
@@ -430,6 +443,45 @@ impl CatalogStore {
         Ok(())
     }
 
+    /// Direct children of `parent_path` ("" = drive root), account-scoped.
+    pub fn children_of(
+        &self,
+        account_id: &str,
+        drive_id: &str,
+        parent_path: &str,
+    ) -> Result<Vec<CatalogNode>, AppError> {
+        let conn = self.open()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT item_id, path, name, kind, desc, visit_count, last_visited
+                 FROM nodes
+                 WHERE account_id = ?1 AND drive_id = ?2 AND parent_path = ?3
+                 ORDER BY kind DESC, name COLLATE NOCASE",
+            )
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        let rows = stmt
+            .query_map(params![account_id, drive_id, parent_path], |row| {
+                Ok(CatalogNode {
+                    item_id: row.get(0)?,
+                    path: row.get(1)?,
+                    name: row.get(2)?,
+                    kind: row.get(3)?,
+                    desc: row.get(4)?,
+                    visit_count: row.get(5)?,
+                    last_visited: row.get(6)?,
+                })
+            })
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })
+    }
+
     // ── Usage ledger ────────────────────────────────────────────────────────
 
     pub fn record_usage(
@@ -455,6 +507,79 @@ impl CatalogStore {
         })?;
         Ok(())
     }
+}
+
+/// Per-source writeback counts over a recent window, for the sitemap page's
+/// accumulation summary.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSummary {
+    pub browse: i64,
+    pub search: i64,
+    pub grounding: i64,
+    pub grounding_read: i64,
+    pub recent_questions: Vec<String>,
+}
+
+/// Aggregates the usage ledger for `account_id` (all accounts when None)
+/// over the last `days` days.
+pub fn usage_summary(
+    store: &CatalogStore,
+    account_id: Option<&str>,
+    days: i64,
+) -> Result<UsageSummary, AppError> {
+    let conn = store.open()?;
+    let since = chrono::Utc::now().timestamp() - days * 86_400;
+    let mut summary = UsageSummary {
+        browse: 0,
+        search: 0,
+        grounding: 0,
+        grounding_read: 0,
+        recent_questions: Vec::new(),
+    };
+    if let Some(account) = account_id {
+        let mut stmt = conn
+            .prepare(
+                "SELECT source, COUNT(*) FROM usage
+                 WHERE account_id = ?1 AND ts >= ?2 GROUP BY source",
+            )
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        let rows = stmt
+            .query_map(params![account, since], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        for (source, count) in rows.filter_map(|r| r.ok()) {
+            match source.as_str() {
+                "browse" => summary.browse = count,
+                "search" => summary.search = count,
+                "grounding" => summary.grounding = count,
+                "grounding-read" => summary.grounding_read = count,
+                _ => {}
+            }
+        }
+        let mut stmt = conn
+            .prepare(
+                "SELECT question FROM usage
+                 WHERE account_id = ?1 AND ts >= ?2 AND question != ''
+                 ORDER BY ts DESC LIMIT 10",
+            )
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        summary.recent_questions = stmt
+            .query_map(params![account, since], |row| row.get(0))
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+    }
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -485,11 +610,9 @@ mod tests {
         assert!(store
             .register_drive("acc1", &CloudEnvironment::Global, "drv1", "onedrive", "OneDrive", "")
             .unwrap());
-        // Same drive again: refresh only.
         assert!(!store
             .register_drive("acc1", &CloudEnvironment::Global, "drv1", "onedrive", "OneDrive 2", "")
             .unwrap());
-        // Another account, same drive id: separate row (isolation).
         assert!(store
             .register_drive("acc2", &CloudEnvironment::China, "drv1", "onedrive", "CN", "")
             .unwrap());
@@ -510,14 +633,9 @@ mod tests {
 
         let mut n = node("R&D/report.pdf", "report.pdf", "file");
         n.desc = "2025 report".into();
-        store
-            .upsert_nodes("acc1", "drv1", &[n.clone()], 1)
-            .unwrap();
-        store
-            .upsert_nodes("acc1", "drv1", &[n.clone()], 1)
-            .unwrap();
+        store.upsert_nodes("acc1", "drv1", &[n.clone()], 1).unwrap();
+        store.upsert_nodes("acc1", "drv1", &[n.clone()], 1).unwrap();
 
-        // Rename on the wire (drive-side change) must not duplicate the row.
         let renamed = CatalogNodeInput {
             name: "report-final.pdf".into(),
             item_id: "id-R&D/report.pdf".into(),
@@ -559,7 +677,6 @@ mod tests {
             .unwrap();
         assert_eq!(fts_rows, 1);
 
-        // Update keeps the mirror at one row with the new content searchable.
         let renamed = CatalogNodeInput {
             name: "meeting-notes.md".into(),
             item_id: "id-R&D/notes.md".into(),
@@ -581,7 +698,6 @@ mod tests {
         assert_eq!(fts_rows, 1);
         assert_eq!(hit, 1);
 
-        // Delete removes the mirror row.
         drop(conn);
         store.delete_drive_nodes("acc1", "drv1").unwrap();
         let conn = store.open().unwrap();
@@ -617,5 +733,74 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
             .unwrap();
         assert_eq!(nodes, 0);
+    }
+
+    #[test]
+    fn children_of_scopes_by_parent_and_account() {
+        let dir = TempDir::new().unwrap();
+        let store = make_store(&dir);
+        store
+            .register_drive("acc1", &CloudEnvironment::Global, "drv1", "onedrive", "OD", "")
+            .unwrap();
+        store
+            .register_drive("acc2", &CloudEnvironment::Global, "drv1", "onedrive", "OD2", "")
+            .unwrap();
+        store
+            .upsert_nodes(
+                "acc1",
+                "drv1",
+                &[
+                    node("R&D", "R&D", "folder"),
+                    node("R&D/a.pdf", "a.pdf", "file"),
+                    node("R&D/sub", "sub", "folder"),
+                    node("Other", "Other", "folder"),
+                    node("Other/b.pdf", "b.pdf", "file"),
+                ],
+                0,
+            )
+            .unwrap();
+        store
+            .upsert_nodes(
+                "acc2",
+                "drv1",
+                &[node("R&D/other.txt", "other.txt", "file")],
+                0,
+            )
+            .unwrap();
+
+        let children = store.children_of("acc1", "drv1", "R&D").unwrap();
+        assert_eq!(children.len(), 2, "direct children only");
+
+        let root = store.children_of("acc1", "drv1", "").unwrap();
+        assert_eq!(root.len(), 2, "R&D folder + Other folder at root");
+
+        let acc2 = store.children_of("acc2", "drv1", "R&D").unwrap();
+        assert_eq!(acc2.len(), 1);
+        assert_eq!(acc2[0].name, "other.txt");
+    }
+
+    #[test]
+    fn usage_summary_groups_by_source() {
+        let dir = TempDir::new().unwrap();
+        let store = make_store(&dir);
+        store
+            .register_drive("acc1", &CloudEnvironment::Global, "drv1", "onedrive", "OD", "")
+            .unwrap();
+        store
+            .record_usage("acc1", "browse", "", &serde_json::json!({}))
+            .unwrap();
+        store
+            .record_usage("acc1", "browse", "", &serde_json::json!({}))
+            .unwrap();
+        store
+            .record_usage("acc1", "grounding", "TLOB 成本", &serde_json::json!({}))
+            .unwrap();
+
+        let summary = usage_summary(&store, Some("acc1"), 7).unwrap();
+        assert_eq!(summary.browse, 2);
+        assert_eq!(summary.grounding, 1);
+        assert_eq!(summary.recent_questions, vec!["TLOB 成本".to_string()]);
+
+        assert_eq!(usage_summary(&store, Some("acc9"), 7).unwrap().browse, 0);
     }
 }

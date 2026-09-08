@@ -9,7 +9,8 @@
     "askai": "Ask AI",
     "search": "Search",
     "collapse": "Collapse sidebar",
-    "expand": "Expand sidebar"
+    "expand": "Expand sidebar",
+    "sitemap": "Site Map"
   },
   "home": {
     "title": "Home",
@@ -472,5 +473,33 @@
     "extractNow": "Extract now",
     "extracting": "Extracting…",
     "extracted": "Extraction complete, {{count}} memories stored."
+  },
+  "sitemap": {
+    "title": "Site Map",
+    "description": "Your cloud map grows automatically from browsing and searching. Stored locally; delete anytime.",
+    "summaryBrowse": "Browsed {{count}} folders this week",
+    "summarySearch": "Search/grounding hits {{count}}",
+    "summaryRead": "AI read {{count}} files",
+    "noDrives": "No drives registered yet. Log in and browse to grow the map.",
+    "nodeCount": "{{count}} nodes",
+    "status": {
+      "seeding": "Seeding",
+      "ready": "Ready",
+      "failed": "Failed",
+      "indexing": "Indexing",
+      "cancelled": "Cancelled"
+    },
+    "treeMode": "Tree",
+    "searchMode": "Search",
+    "searchPlaceholder": "Search the map (name / path)…",
+    "deepIndex": "Deep index",
+    "cancelIndex": "Cancel",
+    "unregister": "Unregister",
+    "confirmRemove": "Remove \"{{name}}\" from the map and delete its indexed nodes?",
+    "selectDrive": "Select a drive on the left to browse its indexed tree.",
+    "loading": "Loading…",
+    "emptyFolder": "(empty)",
+    "collapse": "Collapse",
+    "expand": "Expand"
   }
 }

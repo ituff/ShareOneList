@@ -21,6 +21,7 @@ import { UpdateChecker } from "../tools/UpdateChecker";
 import { HomePage } from "../home/HomePage";
 import { LlmSettings } from "../settings/LlmSettings";
 import { MemorySettings } from "../settings/MemorySettings";
+import { SitemapPage } from "../sitemap/SitemapPage";
 import type {
   AccountEntry,
   CloudEnvironment,
@@ -437,6 +438,8 @@ export function MainContent() {
       return <HomePage key="askai" initialMode="chat" />;
     case "search":
       return <HomePage key="search" initialMode="search" />;
+    case "sitemap":
+      return <SitemapPage />;
     case "files":
       return <FilesPage />;
     case "bookmarks":

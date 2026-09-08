@@ -9,7 +9,8 @@
     "askai": "问 AI",
     "search": "搜索",
     "collapse": "收起侧边栏",
-    "expand": "展开侧边栏"
+    "expand": "展开侧边栏",
+    "sitemap": "站点地图"
   },
   "home": {
     "title": "首页",
@@ -472,5 +473,33 @@
     "extractNow": "立即提取",
     "extracting": "提取中…",
     "extracted": "提取完成，已存储 {{count}} 条记忆。"
+  },
+  "sitemap": {
+    "title": "站点地图",
+    "description": "地图跟随你的浏览与搜索自动生长。数据仅存本机，可随时删除。",
+    "summaryBrowse": "本周浏览积累 {{count}} 个目录",
+    "summarySearch": "搜索/问答命中 {{count}}",
+    "summaryRead": "AI 读取 {{count}} 个文件",
+    "noDrives": "暂无已注册的驱动器。登录并浏览即可生长地图。",
+    "nodeCount": "{{count}} 个节点",
+    "status": {
+      "seeding": "种子中",
+      "ready": "就绪",
+      "failed": "失败",
+      "indexing": "索引中",
+      "cancelled": "已取消"
+    },
+    "treeMode": "树视图",
+    "searchMode": "检索",
+    "searchPlaceholder": "检索地图（名称 / 路径）…",
+    "deepIndex": "深度索引",
+    "cancelIndex": "取消索引",
+    "unregister": "注销",
+    "confirmRemove": "从地图移除 \"{{name}}\" 并删除其已索引节点？",
+    "selectDrive": "在左侧选择一个驱动器查看已积累的目录树。",
+    "loading": "加载中…",
+    "emptyFolder": "（空）",
+    "collapse": "收起",
+    "expand": "展开"
   }
 }

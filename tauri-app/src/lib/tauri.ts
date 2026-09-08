@@ -669,6 +669,8 @@ import type {
   CatalogDrive,
   CatalogHit,
   CatalogHitInput,
+  CatalogNode,
+  CatalogUsageSummary,
 } from "./types";
 
 /** Register a drive (idempotent); new/failed drives get a root-level seed. */
@@ -811,4 +813,20 @@ export function memorySetConfig(enabled: boolean, extractEvery: number): Promise
 /** Run one extraction round immediately using the default model. */
 export function memoryExtractNow(conversationId: string): Promise<number> {
   return invoke<number>("memory_extract_now", { conversationId });
+}
+
+/** Direct children of a catalog folder (root: parentPath = ""). */
+export function catalogTree(
+  accountId: string,
+  driveId: string,
+  parentPath: string
+): Promise<CatalogNode[]> {
+  return invoke<CatalogNode[]>("catalog_tree", { accountId, driveId, parentPath });
+}
+
+/** Recent writeback summary (last 7 days, account-scoped). */
+export function catalogUsageRecent(
+  accountId: string | null
+): Promise<CatalogUsageSummary> {
+  return invoke<CatalogUsageSummary>("catalog_usage_recent", { accountId });
 }
