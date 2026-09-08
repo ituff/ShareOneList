@@ -192,7 +192,11 @@
     "segmentConcurrencyHint": "How many Teams recording segments to download in parallel. Higher is faster, but too high may trigger server throttling (default 4).",
     "github": "Project on GitHub",
     "followTitle": "Follow ONE 生产力 on WeChat",
-    "followDescription": "If ShareOneList is useful to you, follow the author's WeChat account for occasional notes on handy productivity tools and tips."
+    "followDescription": "If ShareOneList is useful to you, follow the author's WeChat account for occasional notes on handy productivity tools and tips.",
+    "tabAppearance": "Appearance & Language",
+    "tabDownloads": "Downloads",
+    "tabAI": "AI Assistant",
+    "tabAbout": "About"
   },
   "accounts": {
     "addAccount": "Add Account",
