@@ -173,6 +173,8 @@ pub fn run() {
             catalog::commands::catalog_query,
             catalog::commands::catalog_reindex,
             catalog::commands::catalog_cancel_index,
+            catalog::commands::catalog_tree,
+            catalog::commands::catalog_usage_recent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

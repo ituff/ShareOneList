@@ -4,6 +4,7 @@ export type NavigationSection =
   | "home"
   | "askai"
   | "search"
+  | "sitemap"
   | "files"
   | "bookmarks"
   | "tasks"

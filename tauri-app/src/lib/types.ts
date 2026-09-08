@@ -460,3 +460,23 @@ export interface MemoryEntry {
   createdAt: number;
   updatedAt: number;
 }
+
+/** A catalog node in the sitemap tree. */
+export interface CatalogNode {
+  itemId: string;
+  path: string;
+  name: string;
+  kind: "folder" | "file";
+  desc: string;
+  visitCount: number;
+  lastVisited: number;
+}
+
+/** Sitemap accumulation summary (usage ledger, last 7 days). */
+export interface CatalogUsageSummary {
+  browse: number;
+  search: number;
+  grounding: number;
+  groundingRead: number;
+  recentQuestions: string[];
+}

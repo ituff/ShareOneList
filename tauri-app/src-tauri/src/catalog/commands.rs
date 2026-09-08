@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::AuthModule;
 use crate::auth::cloud_config::CloudEnvironment;
 use crate::catalog::query::{query_catalog, AccountScope, CatalogHit};
+use crate::catalog::store::{CatalogNode, UsageSummary};
 use crate::catalog::seed::{run_deep_index, run_seed};
 use crate::catalog::store::{CatalogDrive, CatalogStore};
 use std::sync::Arc;
@@ -228,4 +229,36 @@ pub async fn catalog_cancel_index(
         cancel.cancel();
     }
     Ok(())
+}
+
+/// Direct children of a catalog folder for the sitemap tree (lazy loading).
+#[tauri::command]
+pub async fn catalog_tree(
+    account_id: String,
+    drive_id: String,
+    parent_path: String,
+    store: State<'_, Arc<CatalogStore>>,
+) -> Result<Vec<CatalogNode>, AppError> {
+    let store: Arc<CatalogStore> = store.inner().clone();
+    tokio::task::spawn_blocking(move || store.children_of(&account_id, &drive_id, &parent_path))
+        .await
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?
+}
+
+/// Recent writeback summary for the sitemap accumulation stats (7 days).
+#[tauri::command]
+pub async fn catalog_usage_recent(
+    account_id: Option<String>,
+    store: State<'_, Arc<CatalogStore>>,
+) -> Result<UsageSummary, AppError> {
+    let store: Arc<CatalogStore> = store.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        crate::catalog::store::usage_summary(&store, account_id.as_deref(), 7)
+    })
+    .await
+    .map_err(|e| AppError::Config {
+        message: e.to_string(),
+    })?
 }
