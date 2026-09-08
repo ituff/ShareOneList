@@ -1535,7 +1535,7 @@ function ChatView() {
             className={`flex flex-col ${entry.role === "user" ? "items-end" : "items-start"}`}
           >
             <div
-              className={`max-w-[80%] min-w-0 overflow-hidden whitespace-pre-wrap break-words rounded-xl px-3 py-2 text-sm ${
+              className={`max-w-[80%] min-w-0 overflow-hidden break-words rounded-xl px-3 py-2 text-sm ${
                 entry.role === "user"
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted/60 text-foreground"
@@ -1569,7 +1569,7 @@ function ChatView() {
                       )}
                     </>
                   ) : (
-                    entry.content
+                    <span className="whitespace-pre-wrap">{entry.content}</span>
                   )}
                 </>
               )}
