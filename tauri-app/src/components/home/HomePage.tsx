@@ -35,6 +35,7 @@ import {
 } from "../../lib/tauri";
 import { useAuthStore } from "../../stores/authStore";
 import { useNavigationStore } from "../../stores/navigationStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useTabStore } from "../../stores/tabStore";
 import { Markdown } from "./Markdown";
 import {
@@ -525,6 +526,8 @@ async function gatherCloudContext(
 
 interface ChatEntry {
   role: "user" | "assistant" | "notice";
+  /** Memories injected into this turn's prompt (disclosure line). */
+  usedMemories?: string[];
   content: string;
   /** Cloud files that were provided as context for this message; rendered
    * as clickable citation chips. */
@@ -538,6 +541,43 @@ interface ChatEntry {
   isStreaming?: boolean;
   /** Error shown in place of / below the message. */
   error?: string | null;
+}
+
+/** Collapsible "used N memories" line under an assistant answer; each
+ * memory links to the settings page (AI tab) for editing. */
+function MemoryDisclosure({ memories }: { memories: string[] }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-1 max-w-[80%]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <span className={`inline-block text-[10px] transition-transform ${open ? "rotate-180" : ""}`}>&#x2304;</span>
+        {t("home.memoryUsed", { count: memories.length })}
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 border-l-2 border-border pl-2">
+          {memories.map((memory, i) => (
+            <li key={i} className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate">{memory}</span>
+              <button
+                onClick={() => {
+                  useSettingsStore.getState().setSettingsTab("ai");
+                  useNavigationStore.getState().setActiveSection("settings");
+                }}
+                className="shrink-0 underline hover:text-foreground"
+              >
+                {t("home.memoryEdit")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 /** Splits a reasoning duration for the "思考 · 持续了几秒" label. */
@@ -1052,6 +1092,7 @@ function ChatView() {
   const activeRequestId = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const pendingSentRef = useRef(false);
+  const usedMemoriesRef = useRef<string[]>([]);
   const openPreviewTab = useTabStore((s) => s.openPreviewTab);
   const setActiveSection = useNavigationStore((s) => s.setActiveSection);
   // Chat history: the conversation id is kept in a ref so the event listener
@@ -1166,7 +1207,12 @@ function ChatView() {
           if (last?.isStreaming) {
             next[next.length - 1] = { ...last, content: last.content + payload.delta };
           } else {
-            next.push({ role: "assistant", content: payload.delta, isStreaming: true });
+            next.push({
+              role: "assistant",
+              content: payload.delta,
+              isStreaming: true,
+              usedMemories: usedMemoriesRef.current,
+            });
           }
         } else if (payload.kind === "reasoning" && payload.delta) {
           if (last?.isStreaming) {
@@ -1330,7 +1376,7 @@ function ChatView() {
         createdAt: Date.now(),
       });
       refreshList();
-      await llmChat(
+      const start = await llmChat(
         providerId,
         modelId,
         messages,
@@ -1339,6 +1385,18 @@ function ChatView() {
         effort,
         locationHints
       );
+      // Deltas may already have created the assistant entry (streaming races
+      // ahead of the invoke resolving) — stamp whichever state we land in.
+      usedMemoriesRef.current = start.usedMemories;
+      if (start.usedMemories.length > 0) {
+        setEntries((prev) => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && !last.usedMemories) {
+            return [...prev.slice(0, -1), { ...last, usedMemories: start.usedMemories }];
+          }
+          return prev;
+        });
+      }
     } catch (e) {
       setBusy(false);
       activeRequestId.current = null;
@@ -1574,6 +1632,11 @@ function ChatView() {
                 </>
               )}
             </div>
+            {/* Memory disclosure: what the model was told about the user this
+                turn (requirements 2.2). Lives outside the bubble. */}
+            {entry.role === "assistant" && entry.usedMemories && entry.usedMemories.length > 0 && (
+              <MemoryDisclosure memories={entry.usedMemories} />
+            )}
             {/* Citation chips shown under the ANSWER, sourced from the
                 question they grounded (also works for history-loaded turns). */}
             {(() => {

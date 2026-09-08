@@ -288,6 +288,13 @@ export interface CatalogHit {
   visitCount: number;
 }
 
+/** Response of starting a chat request. */
+export interface LlmChatStart {
+  requestId: string;
+  /** Memories actually injected into this turn's system prompt. */
+  usedMemories: string[];
+}
+
 /** Streaming chat event payload pushed from the backend. */
 export interface LlmChatEvent {
   requestId: string;
