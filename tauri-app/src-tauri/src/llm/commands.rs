@@ -18,6 +18,15 @@ pub type ChatRegistry = Mutex<HashMap<String, CancellationToken>>;
 /// Single-flight lock for background memory extraction (try_lock = skip).
 pub type ExtractLock = Arc<tokio::sync::Mutex<()>>;
 
+/// Start-of-chat response: the streaming request id plus the memories that
+/// were actually injected into this turn's system prompt (requirements 2.1).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmChatStart {
+    pub request_id: String,
+    pub used_memories: Vec<String>,
+}
+
 /// LLM config plus masked key previews for the UI.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -229,7 +238,7 @@ pub async fn llm_chat(
     memory: State<'_, Arc<MemoryStore>>,
     registry: State<'_, ChatRegistry>,
     app_handle: tauri::AppHandle,
-) -> Result<String, AppError> {
+) -> Result<LlmChatStart, AppError> {
     let mut messages = messages;
     if messages.is_empty() {
         return Err(AppError::Validation {
@@ -272,6 +281,7 @@ pub async fn llm_chat(
     // The system prompt is backend-owned: strip any client-provided system
     // messages and prepend the grounding prompt with the cloud file context.
     // User memories join the prompt when the feature is enabled (budgeted).
+    let mut used_memory_contents: Vec<String> = Vec::new();
     let memories_for_prompt = if config.memory.enabled {
         let entries = memory
             .enabled_for_injection(MEMORY_MAX_ITEMS)
@@ -287,7 +297,8 @@ pub async fn llm_chat(
             .map(|m| m.id.clone())
             .collect();
         memory.touch_used(&used_ids);
-        selected
+        used_memory_contents = selected;
+        used_ids
     } else {
         Vec::new()
     };
@@ -325,7 +336,10 @@ pub async fn llm_chat(
             .remove(&spawn_request_id);
     });
 
-    Ok(request_id)
+    Ok(LlmChatStart {
+        request_id,
+        used_memories: used_memory_contents,
+    })
 }
 
 /// Cancel an in-flight chat request; unknown ids are ignored.

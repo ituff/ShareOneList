@@ -506,6 +506,7 @@ export function performUpdate(version: string): Promise<void> {
 
 import type {
   LlmChatMessage,
+  LlmChatStart,
   LlmConfigSnapshot,
   LlmContextFile,
   LlmProviderConfig,
@@ -560,8 +561,8 @@ export function llmChat(
   contextFiles: LlmContextFile[],
   reasoningEffort?: "low" | "medium" | "high",
   locationHints: string[] = []
-): Promise<string> {
-  return invoke<string>("llm_chat", {
+): Promise<LlmChatStart> {
+  return invoke<LlmChatStart>("llm_chat", {
     providerId,
     modelId,
     messages,

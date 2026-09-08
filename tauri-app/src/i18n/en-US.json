@@ -76,7 +76,9 @@
     "durationMinutes": "{{m}}m {{s}}s",
     "memorySaved": "Remembered: {{content}}",
     "memoryForgotten": "Deleted {{count}} memories.",
-    "memoryForgetNone": "No memories match \"{{keyword}}\"."
+    "memoryForgetNone": "No memories match \"{{keyword}}\".",
+    "memoryUsed": "Used {{count}} memories",
+    "memoryEdit": "edit"
   },
   "files": {
     "title": "Files",

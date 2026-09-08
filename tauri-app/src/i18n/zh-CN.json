@@ -76,7 +76,9 @@
     "durationMinutes": "{{m}} 分 {{s}} 秒",
     "memorySaved": "已记住：{{content}}",
     "memoryForgotten": "已删除 {{count}} 条记忆。",
-    "memoryForgetNone": "没有匹配 \"{{keyword}}\" 的记忆。"
+    "memoryForgetNone": "没有匹配 \"{{keyword}}\" 的记忆。",
+    "memoryUsed": "已结合 {{count}} 条记忆",
+    "memoryEdit": "去编辑"
   },
   "files": {
     "title": "文件",
