@@ -19,7 +19,7 @@ use crate::models::{AccountCategory, AccountEntry};
 // Default client IDs – these should be overridden from a config file in production.
 // For now they are compile-time constants matching the existing appsettings.json structure.
 const GLOBAL_CLIENT_ID: &str = "9e5165d3-7c32-4cf6-bb54-b444bc429ba8";
-const CHINA_CLIENT_ID: &str = "edbc6b7c-e49c-42bd-8761-c0bc2386856f";
+const CHINA_CLIENT_ID: &str = "bef23379-d430-497d-aaaa-caebd57118f3";
 
 const KEYRING_SERVICE: &str = "shareonelist";
 
