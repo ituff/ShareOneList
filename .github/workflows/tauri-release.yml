@@ -42,6 +42,10 @@ jobs:
           draft: true
           prerelease: false
           bodyFile: release-notes.md
+          # Re-running the workflow must reuse the existing draft instead of
+          # creating a duplicate release for the same tag.
+          allowUpdates: true
+          replacesArtifacts: true
 
   build-and-upload:
     needs: create-release
