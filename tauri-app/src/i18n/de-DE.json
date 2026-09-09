@@ -167,7 +167,14 @@
     "motrixConfig": "Motrix-Konfiguration",
     "idmPath": "IDM-Pfad",
     "rpcAddress": "RPC-Adresse",
-    "rpcSecret": "RPC-Geheimnis"
+    "rpcSecret": "RPC-Geheimnis",
+    "cards": {
+      "download-assistant": {
+        "title": "Download-Assistent",
+        "description": "OneDrive-/SharePoint-Links analysieren und Downloads an Aria2 / Motrix / IDM übergeben."
+      }
+    },
+    "backToMenu": "Werkzeugmenü"
   },
   "settings": {
     "title": "Einstellungen",
