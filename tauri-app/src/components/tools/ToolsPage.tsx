@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { Download, ArrowLeft } from "lucide-react";
 import { useToastStore } from "../../stores/toastStore";
 import { getErrorMessage } from "../../lib/errors";
 
@@ -18,7 +19,63 @@ const DOWNLOADER_LABELS: Record<DownloaderType, string> = {
   idm: "IDM",
 };
 
+type ToolId = "download-assistant";
+
+const TOOL_CARDS: { id: ToolId; icon: typeof Download }[] = [
+  { id: "download-assistant", icon: Download },
+];
+
 export function ToolsPage() {
+  const { t } = useTranslation();
+  const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+
+  if (activeTool === "download-assistant") {
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={() => setActiveTool(null)}
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> {t("tools.backToMenu")}
+        </button>
+        <ToolDetail />
+      </div>
+    );
+  }
+
+  // Tool menu — click a card to open its detail view.
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-foreground">{t("tools.title")}</h2>
+        <p className="text-muted-foreground">{t("tools.description")}</p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {TOOL_CARDS.map(({ id, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTool(id)}
+            className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/50"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Icon className="h-5 w-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                {t(`tools.cards.${id}.title`)}
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                {t(`tools.cards.${id}.description`)}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolDetail() {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
 

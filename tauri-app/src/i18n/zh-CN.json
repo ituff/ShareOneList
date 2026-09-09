@@ -167,7 +167,14 @@
     "motrixConfig": "Motrix 配置",
     "idmPath": "IDM 路径",
     "rpcAddress": "RPC 地址",
-    "rpcSecret": "RPC 密钥"
+    "rpcSecret": "RPC 密钥",
+    "cards": {
+      "download-assistant": {
+        "title": "下载助手",
+        "description": "解析 OneDrive/SharePoint 分享链接，推送到 Aria2 / Motrix / IDM 下载。"
+      }
+    },
+    "backToMenu": "返回工具菜单"
   },
   "settings": {
     "title": "设置",
