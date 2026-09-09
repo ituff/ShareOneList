@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getVersion } from "@tauri-apps/api/app";
 import wechatQrCode from "../../assets/wechat-qrcode.png";
 import { useNavigationStore } from "../../stores/navigationStore";
 import { AccountList } from "../accounts/AccountList";
@@ -273,11 +272,6 @@ function SettingsPage() {
   const setSegmentConcurrency = useSettingsStore((s) => s.setSegmentDownloadConcurrency);
   const settingsTab = useSettingsStore((s) => s.settingsTab);
   const setSettingsTab = useSettingsStore((s) => s.setSettingsTab);
-  const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    getVersion().then(setVersion).catch(() => setVersion(null));
-  }, []);
 
   return (
     <div className="space-y-6">
@@ -402,10 +396,7 @@ function SettingsPage() {
             github.com/ituff/ShareOneList
           </a>
         </div>
-        <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
-          <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
-          <span className="text-sm font-medium text-foreground">{version ?? "..."}</span>
-        </div>
+        <UpdateChecker />
       </section>
 
       {/* WeChat official account promotion */}
@@ -420,8 +411,6 @@ function SettingsPage() {
       </section>
       </>
       )}
-
-      <UpdateChecker />
     </div>
   );
 }
