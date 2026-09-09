@@ -345,6 +345,8 @@ function SettingsPage() {
           <option value="system">{t("settings.languageSystem")}</option>
           <option value="en-US">English</option>
           <option value="zh-CN">简体中文</option>
+          <option value="ja-JP">日本語</option>
+          <option value="de-DE">Deutsch</option>
         </select>
       </section>
       </>

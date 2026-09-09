@@ -1,10 +1,12 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import deDE from "./de-DE.json";
 import enUS from "./en-US.json";
+import jaJP from "./ja-JP.json";
 import zhCN from "./zh-CN.json";
 
 /** Supported locale codes. */
-export const SUPPORTED_LOCALES = ["en-US", "zh-CN"] as const;
+export const SUPPORTED_LOCALES = ["en-US", "zh-CN", "ja-JP", "de-DE"] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
 /**
@@ -18,6 +20,8 @@ export function resolveLocale(locale: string): SupportedLocale {
   const lang = locale.split("-")[0].toLowerCase();
   if (lang === "zh") return "zh-CN";
   if (lang === "en") return "en-US";
+  if (lang === "ja") return "ja-JP";
+  if (lang === "de") return "de-DE";
   return "en-US";
 }
 
@@ -33,6 +37,8 @@ function detectSystemLocale(): SupportedLocale {
 const resources = {
   "en-US": { translation: enUS },
   "zh-CN": { translation: zhCN },
+  "ja-JP": { translation: jaJP },
+  "de-DE": { translation: deDE },
 };
 
 i18n.use(initReactI18next).init({
