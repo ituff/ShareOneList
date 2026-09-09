@@ -13,7 +13,7 @@
     "sitemap": "Site Map"
   },
   "home": {
-    "title": "Home",
+    "title": "ShareOneList",
     "welcome": "Welcome to ShareOneList — cross-platform OneDrive & SharePoint file manager.",
     "greeting": "Hello, {{name}}",
     "quickStart": "Quick Start",
