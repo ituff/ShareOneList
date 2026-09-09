@@ -13,7 +13,7 @@
     "sitemap": "站点地图"
   },
   "home": {
-    "title": "首页",
+    "title": "ShareOneList",
     "welcome": "欢迎使用 ShareOneList — 跨平台 OneDrive 和 SharePoint 文件管理器。",
     "greeting": "你好，{{name}}",
     "quickStart": "快速开始",
