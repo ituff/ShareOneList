@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { getErrorMessage } from "../../lib/errors";
 
 interface UpdateInfo {
@@ -17,9 +18,16 @@ type UpdateState =
   | { status: "downloading" }
   | { status: "error"; message: string };
 
+/** The About tab's version row with the update button and inline states
+ * (changelog / download / error) rendered beneath the row. */
 export function UpdateChecker() {
   const { t } = useTranslation();
   const [state, setState] = useState<UpdateState>({ status: "idle" });
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion(null));
+  }, []);
 
   const handleCheck = async () => {
     setState({ status: "checking" });
@@ -48,67 +56,62 @@ export function UpdateChecker() {
     }
   };
 
-  return (
-    <section className="space-y-3 p-4 rounded-lg border border-border bg-card">
-      <h3 className="text-lg font-semibold text-foreground">
-        {t("settings.checkUpdate")}
-      </h3>
-
-      {/* Idle / Check Button */}
-      {(state.status === "idle" || state.status === "up-to-date") && (
-        <div className="space-y-2">
+  const control = () => {
+    switch (state.status) {
+      case "checking":
+      case "downloading":
+        return (
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        );
+      case "up-to-date":
+        return <span className="text-xs text-muted-foreground">{t("update.upToDate")}</span>;
+      default:
+        return (
           <button
             onClick={handleCheck}
-            className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+            className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
           >
             {t("settings.checkUpdate")}
           </button>
-          {state.status === "up-to-date" && (
-            <p className="text-sm text-muted-foreground">
-              {t("update.upToDate")}
-            </p>
-          )}
-        </div>
-      )}
+        );
+    }
+  };
 
-      {/* Checking / Loading */}
-      {state.status === "checking" && (
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
+        <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
         <div className="flex items-center gap-2">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm text-muted-foreground">
-            {t("settings.checkUpdate")}...
-          </span>
+          <span className="text-sm font-medium text-foreground">{version ?? "..."}</span>
+          {control()}
         </div>
-      )}
+      </div>
 
-      {/* Update Available */}
       {state.status === "available" && (
-        <div className="space-y-3">
-          <div className="p-3 rounded-md bg-muted/50 space-y-2">
-            <p className="text-sm font-medium text-foreground">
-              {t("update.available")}: v{state.info.version}
-            </p>
-            {state.info.changelog && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {t("update.changelog")}
-                </p>
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-                  {state.info.changelog}
-                </pre>
-              </div>
-            )}
-          </div>
+        <div className="space-y-2 rounded-md bg-muted/50 p-3">
+          <p className="text-sm font-medium text-foreground">
+            {t("update.available")}: v{state.info.version}
+          </p>
+          {state.info.changelog && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t("update.changelog")}
+              </p>
+              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                {state.info.changelog}
+              </pre>
+            </div>
+          )}
           <div className="flex gap-2">
             <button
               onClick={handleDownload}
-              className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
               {t("update.downloadAndInstall")}
             </button>
             <button
               onClick={() => setState({ status: "idle" })}
-              className="px-4 py-2 rounded-md border border-input bg-background text-foreground text-sm hover:bg-accent transition-colors"
+              className="rounded-md border border-input bg-background px-4 py-2 text-sm text-foreground hover:bg-accent"
             >
               {t("dialogs.cancel")}
             </button>
@@ -116,17 +119,13 @@ export function UpdateChecker() {
         </div>
       )}
 
-      {/* Downloading */}
       {state.status === "downloading" && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-sm text-muted-foreground">
-            {t("update.downloading")}
-          </span>
+          {t("update.downloading")}
         </div>
       )}
 
-      {/* Error */}
       {state.status === "error" && (
         <div className="space-y-2">
           <p className="text-sm text-destructive">
@@ -134,12 +133,12 @@ export function UpdateChecker() {
           </p>
           <button
             onClick={handleCheck}
-            className="px-4 py-2 rounded-md border border-input bg-background text-foreground text-sm hover:bg-accent transition-colors"
+            className="rounded-md border border-input bg-background px-4 py-2 text-sm text-foreground hover:bg-accent"
           >
             {t("errors.retryAction")}
           </button>
         </div>
       )}
-    </section>
+    </div>
   );
 }
