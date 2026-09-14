@@ -112,6 +112,10 @@ pub struct AppConfig {
     /// Update channel: "stable" (default) or "beta" (prereleases included).
     #[serde(default)]
     pub update_channel: String,
+    /// Directory receiving automatic config backups (typically a OneDrive
+    /// sync folder). `None` disables auto backup.
+    #[serde(default)]
+    pub auto_backup_dir: Option<String>,
 }
 
 fn default_segment_concurrency() -> u32 {
@@ -239,6 +243,7 @@ impl Default for AppConfig {
             last_download_path: None,
             segment_download_concurrency: default_segment_concurrency(),
             update_channel: "stable".to_string(),
+            auto_backup_dir: None,
         }
     }
 }

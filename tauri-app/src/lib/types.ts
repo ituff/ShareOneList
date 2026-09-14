@@ -128,6 +128,8 @@ export interface AppConfig {
   segmentDownloadConcurrency: number;
   /** Update channel: "stable" or "beta" (prereleases included). */
   updateChannel: "stable" | "beta";
+  /** Directory receiving automatic config backups; null disables. */
+  autoBackupDir: string | null;
 }
 
 // ─── LLM Providers (AI assistant) ───────────────────────────────────────────

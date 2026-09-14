@@ -4,7 +4,9 @@
 pub mod commands;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use chrono::Utc;
 
 use crate::auth::cloud_config::CloudEnvironment;
 use crate::models::{AccountEntry, AppConfig};
@@ -12,6 +14,7 @@ use crate::models::{AccountEntry, AppConfig};
 const CONFIG_FILE_NAME: &str = "config.json";
 const ACCOUNTS_FILE_NAME: &str = "accounts.json";
 const LEGACY_MIGRATION_MARKER: &str = ".legacy-drives-migrated";
+const AUTO_BACKUP_FILE_NAME: &str = "ShareOneList-backup.json";
 
 /// Legacy WinUI `cache/drives.json` shape.
 #[derive(Debug, serde::Deserialize)]
@@ -183,6 +186,7 @@ impl ConfigManager {
         let json = serde_json::to_string_pretty(config)
             .map_err(|e| ConfigError::Serialize(e.to_string()))?;
         fs::write(&self.config_path, json).map_err(|e| ConfigError::Io(e.to_string()))?;
+        self.write_auto_backup();
         Ok(())
     }
 
@@ -204,17 +208,107 @@ impl ConfigManager {
         let json = serde_json::to_string_pretty(accounts)
             .map_err(|e| ConfigError::Serialize(e.to_string()))?;
         fs::write(&self.accounts_path, json).map_err(|e| ConfigError::Io(e.to_string()))?;
+        self.write_auto_backup();
         Ok(())
     }
 
     /// Ensure the parent directory of `file_path` exists, creating it if necessary.
-    fn ensure_dir_exists(&self, file_path: &PathBuf) -> Result<(), ConfigError> {
+    fn ensure_dir_exists(&self, file_path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = file_path.parent() {
             if !parent.exists() {
                 fs::create_dir_all(parent).map_err(|e| ConfigError::Io(e.to_string()))?;
             }
         }
         Ok(())
+    }
+
+    /// Build the export/auto-backup payload: settings + accounts (no
+    /// credentials — refresh tokens never leave the OS keyring).
+    fn build_backup_payload(&self) -> Result<serde_json::Value, ConfigError> {
+        let payload = serde_json::json!({
+            "kind": "ShareOneList-backup",
+            "backupVersion": 1,
+            "exportedAt": Utc::now().to_rfc3339(),
+            "config": self.load_config(),
+            "accounts": self.load_accounts(),
+        });
+        Ok(payload)
+    }
+
+    /// Write the backup payload to `path` as pretty JSON (atomically).
+    fn write_payload(&self, path: &Path, payload: &serde_json::Value) -> Result<(), ConfigError> {
+        self.ensure_dir_exists(path)?;
+        let tmp = path.with_extension("json.tmp");
+        let json = serde_json::to_string_pretty(payload)
+            .map_err(|e| ConfigError::Serialize(e.to_string()))?;
+        fs::write(&tmp, json).map_err(|e| ConfigError::Io(e.to_string()))?;
+        fs::rename(&tmp, path).map_err(|e| ConfigError::Io(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Export settings + accounts to the given file path.
+    pub fn export_bundle(&self, path: &Path) -> Result<(), ConfigError> {
+        let payload = self.build_backup_payload()?;
+        self.write_payload(path, &payload)
+    }
+
+    /// Import settings + accounts from a backup file. Overwrites the current
+    /// config and account list and returns what was imported.
+    pub fn import_bundle(
+        &self,
+        path: &Path,
+    ) -> Result<(AppConfig, Vec<AccountEntry>, usize), ConfigError> {
+        let content = fs::read_to_string(path).map_err(|e| ConfigError::Io(e.to_string()))?;
+        let payload: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| ConfigError::Serialize(e.to_string()))?;
+        if payload.get("kind").and_then(|v| v.as_str()) != Some("ShareOneList-backup") {
+            return Err(ConfigError::Serialize(
+                "not a ShareOneList backup file".to_string(),
+            ));
+        }
+
+        let config: AppConfig = serde_json::from_value(
+            payload
+                .get("config")
+                .cloned()
+                .ok_or_else(|| ConfigError::Serialize("missing config".to_string()))?,
+        )
+        .map_err(|e| ConfigError::Serialize(format!("invalid config: {}", e)))?;
+        let accounts: Vec<AccountEntry> = serde_json::from_value(
+            payload
+                .get("accounts")
+                .cloned()
+                .ok_or_else(|| ConfigError::Serialize("missing accounts".to_string()))?,
+        )
+        .map_err(|e| ConfigError::Serialize(format!("invalid accounts: {}", e)))?;
+        let count = accounts.len();
+
+        self.save_config(&config)?;
+        self.save_accounts(&accounts)?;
+        Ok((config, accounts, count))
+    }
+
+    /// Writes the backup payload into the user-configured auto backup
+    /// directory (typically a OneDrive sync folder). No-op when the
+    /// directory is not configured.
+    pub fn write_auto_backup(&self) {
+        let Some(dir) = self
+            .load_config()
+            .auto_backup_dir
+            .filter(|d| !d.trim().is_empty())
+        else {
+            return;
+        };
+        match self.build_backup_payload() {
+            Ok(payload) => {
+                if let Err(e) =
+                    self.write_payload(&PathBuf::from(dir).join(AUTO_BACKUP_FILE_NAME), &payload)
+                {
+                    eprintln!("[config] auto backup failed: {}", e);
+                }
+            }
+            Err(e) => eprintln!("[config] auto backup payload failed: {}", e),
+        }
     }
 }
 
