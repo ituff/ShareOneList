@@ -40,7 +40,8 @@ jobs:
           tag: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           draft: true
-          prerelease: false
+          # Tags with a suffix (e.g. -beta.2) are prereleases; plain tags are stable.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           bodyFile: release-notes.md
           # Re-running the workflow must reuse the existing draft instead of
           # creating a duplicate release for the same tag.
