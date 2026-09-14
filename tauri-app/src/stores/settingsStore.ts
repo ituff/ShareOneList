@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /** Sub-tab within the settings page ("ai" is deep-link target for memory editing). */
-export type SettingsTab = "appearance" | "downloads" | "ai" | "about";
+export type SettingsTab = "appearance" | "downloads" | "ai" | "backup" | "about";
 /** Update channel: stable releases only, or prereleases included. */
 export type UpdateChannel = "stable" | "beta";
 import type { AppConfig, ThemeMode, WindowState } from "../lib/types";
@@ -20,6 +20,8 @@ interface SettingsState {
   segmentDownloadConcurrency: number;
   /** Update channel: "stable" or "beta" (prereleases included). */
   updateChannel: UpdateChannel;
+  /** Directory receiving automatic config backups; null disables. */
+  autoBackupDir: string | null;
   /** Whether the initial config has been loaded from the backend. */
   isLoaded: boolean;
 
@@ -37,6 +39,8 @@ interface SettingsState {
   setSegmentDownloadConcurrency: (n: number) => void;
   /** Switch the update channel and persist to backend. */
   setUpdateChannel: (channel: UpdateChannel) => void;
+  /** Set the auto backup directory (null disables) and persist. */
+  setAutoBackupDir: (dir: string | null) => void;
   /** Active sub-tab in the settings page. */
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -68,6 +72,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastDownloadPath: null,
   segmentDownloadConcurrency: 4,
   updateChannel: "stable",
+  autoBackupDir: null,
   isLoaded: false,
   settingsTab: "appearance",
 
@@ -82,6 +87,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         segmentDownloadConcurrency: config.segmentDownloadConcurrency ?? 4,
         updateChannel:
           config.updateChannel === "beta" ? "beta" : "stable",
+        autoBackupDir: config.autoBackupDir ?? null,
         isLoaded: true,
       });
     } catch (err) {
@@ -101,6 +107,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
       updateChannel: state.updateChannel,
+      autoBackupDir: state.autoBackupDir,
     });
   },
 
@@ -114,6 +121,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
       updateChannel: state.updateChannel,
+      autoBackupDir: state.autoBackupDir,
     });
   },
 
@@ -127,6 +135,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
       updateChannel: state.updateChannel,
+      autoBackupDir: state.autoBackupDir,
     });
   },
 
@@ -140,11 +149,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: path,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
       updateChannel: state.updateChannel,
+      autoBackupDir: state.autoBackupDir,
     });
   },
 
-  setSettingsTab: (tab) => {
-    set({ settingsTab: tab });
+  setAutoBackupDir: (dir) => {
+    set({ autoBackupDir: dir });
+    const state = get();
+    persistConfig({
+      theme: state.theme,
+      language: state.language,
+      window: state.window,
+      lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: state.updateChannel,
+      autoBackupDir: dir,
+    });
   },
 
   setSegmentDownloadConcurrency: (n) => {
@@ -158,6 +178,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: clamped,
       updateChannel: state.updateChannel,
+      autoBackupDir: state.autoBackupDir,
     });
   },
 
@@ -171,6 +192,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
       updateChannel: channel,
+      autoBackupDir: state.autoBackupDir,
     });
+  },
+
+  setSettingsTab: (tab) => {
+    set({ settingsTab: tab });
   },
 }));

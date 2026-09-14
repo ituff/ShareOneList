@@ -17,6 +17,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
+import { BackupSettings } from "../settings/BackupSettings";
 import { HomePage } from "../home/HomePage";
 import { LlmSettings } from "../settings/LlmSettings";
 import { MemorySettings } from "../settings/MemorySettings";
@@ -286,6 +287,7 @@ function SettingsPage() {
             ["appearance", t("settings.tabAppearance")],
             ["downloads", t("settings.tabDownloads")],
             ["ai", t("settings.tabAI")],
+            ["backup", t("settings.tabBackup")],
             ["about", t("settings.tabAbout")],
           ] as [SettingsTab, string][]
         ).map(([tab, label]) => (
@@ -381,6 +383,8 @@ function SettingsPage() {
       <MemorySettings />
       </>
       )}
+
+      {settingsTab === "backup" && <BackupSettings />}
 
       {settingsTab === "about" && (
       <>

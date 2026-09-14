@@ -484,6 +484,37 @@ export function getAccounts(): Promise<AccountEntry[]> {
   return invoke<AccountEntry[]>("get_accounts");
 }
 
+// ─── Config Backup & Restore ────────────────────────────────────────────
+
+/**
+ * Export settings + accounts (no credentials) to a backup file.
+ */
+export function exportConfig(path: string): Promise<void> {
+  return invoke<void>("export_config", { path });
+}
+
+export interface ImportSummary {
+  config: AppConfig;
+  accounts: AccountEntry[];
+  accountsCount: number;
+}
+
+/**
+ * Import settings + accounts from a backup file, overwriting the current
+ * values. Returns the imported summary so stores can refresh.
+ */
+export function importConfig(path: string): Promise<ImportSummary> {
+  return invoke<ImportSummary>("import_config", { path });
+}
+
+/**
+ * Set the auto backup directory (null disables). An immediate backup is
+ * written when a directory is set.
+ */
+export function setAutoBackupDir(dir: string | null): Promise<void> {
+  return invoke<void>("set_auto_backup_dir", { dir });
+}
+
 // ─── Application Update ─────────────────────────────────────────────────────
 
 /**
