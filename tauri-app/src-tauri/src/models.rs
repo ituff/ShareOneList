@@ -109,6 +109,9 @@ pub struct AppConfig {
     #[serde(default = "default_segment_concurrency")]
     #[serde(alias = "segment_download_concurrency")]
     pub segment_download_concurrency: u32,
+    /// Update channel: "stable" (default) or "beta" (prereleases included).
+    #[serde(default)]
+    pub update_channel: String,
 }
 
 fn default_segment_concurrency() -> u32 {
@@ -235,6 +238,7 @@ impl Default for AppConfig {
             window: WindowState::default(),
             last_download_path: None,
             segment_download_concurrency: default_segment_concurrency(),
+            update_channel: "stable".to_string(),
         }
     }
 }

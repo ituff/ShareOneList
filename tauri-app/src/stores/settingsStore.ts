@@ -2,6 +2,8 @@ import { create } from "zustand";
 
 /** Sub-tab within the settings page ("ai" is deep-link target for memory editing). */
 export type SettingsTab = "appearance" | "downloads" | "ai" | "about";
+/** Update channel: stable releases only, or prereleases included. */
+export type UpdateChannel = "stable" | "beta";
 import type { AppConfig, ThemeMode, WindowState } from "../lib/types";
 import { getConfig, saveConfig } from "../lib/tauri";
 
@@ -16,6 +18,8 @@ interface SettingsState {
   lastDownloadPath: string | null;
   /** Concurrent segment fetches for the recording stream pipeline. */
   segmentDownloadConcurrency: number;
+  /** Update channel: "stable" or "beta" (prereleases included). */
+  updateChannel: UpdateChannel;
   /** Whether the initial config has been loaded from the backend. */
   isLoaded: boolean;
 
@@ -31,6 +35,8 @@ interface SettingsState {
   setLastDownloadPath: (path: string | null) => void;
   /** Update the recording segment download concurrency and persist to backend. */
   setSegmentDownloadConcurrency: (n: number) => void;
+  /** Switch the update channel and persist to backend. */
+  setUpdateChannel: (channel: UpdateChannel) => void;
   /** Active sub-tab in the settings page. */
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -61,6 +67,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   window: defaultWindow,
   lastDownloadPath: null,
   segmentDownloadConcurrency: 4,
+  updateChannel: "stable",
   isLoaded: false,
   settingsTab: "appearance",
 
@@ -73,6 +80,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         window: config.window,
         lastDownloadPath: config.lastDownloadPath ?? null,
         segmentDownloadConcurrency: config.segmentDownloadConcurrency ?? 4,
+        updateChannel:
+          config.updateChannel === "beta" ? "beta" : "stable",
         isLoaded: true,
       });
     } catch (err) {
@@ -91,6 +100,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       window: state.window,
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: state.updateChannel,
     });
   },
 
@@ -103,6 +113,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       window: state.window,
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: state.updateChannel,
     });
   },
 
@@ -115,6 +126,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       window: windowState,
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: state.updateChannel,
     });
   },
 
@@ -127,6 +139,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       window: state.window,
       lastDownloadPath: path,
       segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: state.updateChannel,
     });
   },
 
@@ -144,6 +157,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       window: state.window,
       lastDownloadPath: state.lastDownloadPath,
       segmentDownloadConcurrency: clamped,
+      updateChannel: state.updateChannel,
+    });
+  },
+
+  setUpdateChannel: (channel) => {
+    set({ updateChannel: channel });
+    const state = get();
+    persistConfig({
+      theme: state.theme,
+      language: state.language,
+      window: state.window,
+      lastDownloadPath: state.lastDownloadPath,
+      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+      updateChannel: channel,
     });
   },
 }));

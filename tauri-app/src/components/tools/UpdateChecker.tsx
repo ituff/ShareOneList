@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getErrorMessage } from "../../lib/errors";
+import { useSettingsStore, type UpdateChannel } from "../../stores/settingsStore";
 
 interface UpdateInfo {
   version: string;
@@ -18,10 +19,12 @@ type UpdateState =
   | { status: "downloading" }
   | { status: "error"; message: string };
 
-/** The About tab's version row with the update button and inline states
- * (changelog / download / error) rendered beneath the row. */
+/** The About tab's channel toggle, version row with the update button and
+ * inline states (changelog / download / error) rendered beneath the row. */
 export function UpdateChecker() {
   const { t } = useTranslation();
+  const updateChannel = useSettingsStore((s) => s.updateChannel);
+  const setUpdateChannel = useSettingsStore((s) => s.setUpdateChannel);
   const [state, setState] = useState<UpdateState>({ status: "idle" });
   const [version, setVersion] = useState<string | null>(null);
 
@@ -32,7 +35,9 @@ export function UpdateChecker() {
   const handleCheck = async () => {
     setState({ status: "checking" });
     try {
-      const result = await invoke<UpdateInfo | null>("check_update");
+      const result = await invoke<UpdateInfo | null>("check_update", {
+        channel: updateChannel,
+      });
       if (result) {
         setState({ status: "available", info: result });
       } else {
@@ -48,12 +53,18 @@ export function UpdateChecker() {
     const version = state.info.version;
     setState({ status: "downloading" });
     try {
-      await invoke("perform_update", { version });
+      await invoke("perform_update", { version, channel: updateChannel });
       // After opening the installer, reset to idle
       setState({ status: "idle" });
     } catch (err: unknown) {
       setState({ status: "error", message: getErrorMessage(err) });
     }
+  };
+
+  // Switching channels invalidates the previous check result.
+  const handleChannelChange = (channel: UpdateChannel) => {
+    setUpdateChannel(channel);
+    if (state.status !== "idle") setState({ status: "idle" });
   };
 
   const control = () => {
@@ -77,8 +88,37 @@ export function UpdateChecker() {
     }
   };
 
+  const channelToggle = () => (
+    <div className="flex items-center rounded-md border border-border bg-background p-0.5">
+      {(
+        [
+          { value: "stable", label: t("settings.channelStable") },
+          { value: "beta", label: t("settings.channelBeta") },
+        ] as const
+      ).map((option) => (
+        <button
+          key={option.value}
+          onClick={() => handleChannelChange(option.value)}
+          className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+            updateChannel === option.value
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          aria-pressed={updateChannel === option.value}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="space-y-2">
+      <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
+        <span className="text-sm text-muted-foreground">{t("settings.updateChannel")}</span>
+        {channelToggle()}
+      </div>
+
       <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
         <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
         <div className="flex items-center gap-2">

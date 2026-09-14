@@ -8,8 +8,13 @@ use serde::Deserialize;
 use tauri::Emitter;
 
 const GITHUB_RELEASES_URL: &str =
-    "https://api.github.com/repos/ituff/ShareOneList/releases/latest";
+    "https://api.github.com/repos/ituff/ShareOneList/releases";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Update channels. "stable" only ever offers the newest non-prerelease
+/// release; "beta" offers the newest release overall (including prereleases).
+pub const CHANNEL_STABLE: &str = "stable";
+pub const CHANNEL_BETA: &str = "beta";
 
 /// Download source prefixes tried in order. The empty prefix is GitHub direct;
 /// the others are China-friendly GitHub acceleration mirrors. Prefixes must
@@ -34,6 +39,10 @@ struct GitHubRelease {
     tag_name: String,
     body: Option<String>,
     assets: Vec<GitHubAsset>,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
 }
 
 #[derive(Deserialize)]
@@ -42,27 +51,40 @@ struct GitHubAsset {
     browser_download_url: String,
 }
 
-/// Compare two semver-style version strings (e.g. "2.0.0" vs "2.1.0").
-/// Returns true if `remote` is newer than `local`.
+/// Compare two version strings ("2.1.1", "v2.2.0-beta.2"…). Prerelease tags
+/// are flattened to four numbers ("v2.2.0-beta.2" → [2,2,0,2], "2.2.0" →
+/// [2,2,0,0]), so the beta channel progresses beta.1 → beta.2 → … and the
+/// next stable still wins.
 fn is_newer(remote: &str, local: &str) -> bool {
-    let parse = |v: &str| -> Vec<u64> {
-        v.trim_start_matches('v')
-            .split('.')
-            .filter_map(|s| s.parse::<u64>().ok())
-            .collect()
+    is_newer_version(parse_version(remote), parse_version(local))
+}
+
+fn parse_version(v: &str) -> [u64; 4] {
+    let s = v.trim_start_matches('v').trim();
+    let (base, pre) = match s.split_once('-') {
+        Some((b, p)) => (b, Some(p)),
+        None => (s, None),
     };
+    let mut nums: Vec<u64> = base
+        .split('.')
+        .map(|part| part.parse::<u64>().unwrap_or(0))
+        .collect();
+    // Prerelease suffix ("beta.2") becomes the fourth numeric segment.
+    let beta_n = match pre.and_then(|p| p.rsplit_once('.')) {
+        Some((_, n)) => n.parse::<u64>().unwrap_or(0),
+        None => 0,
+    };
+    nums.resize(3, 0);
+    nums.push(beta_n);
+    let mut out = [0u64; 4];
+    out.copy_from_slice(&nums[..4]);
+    out
+}
 
-    let r = parse(remote);
-    let l = parse(local);
-
-    for i in 0..r.len().max(l.len()) {
-        let rv = r.get(i).copied().unwrap_or(0);
-        let lv = l.get(i).copied().unwrap_or(0);
-        if rv > lv {
-            return true;
-        }
-        if rv < lv {
-            return false;
+fn is_newer_version(remote: [u64; 4], local: [u64; 4]) -> bool {
+    for i in 0..4 {
+        if remote[i] != local[i] {
+            return remote[i] > local[i];
         }
     }
     false
@@ -152,35 +174,10 @@ fn select_platform_asset_with_preferences<'a>(
         .and_then(|index| assets.get(index))
 }
 
-/// Check GitHub releases for a newer version.
-/// Returns `Some(UpdateInfo)` if a newer release exists, `None` if up to date.
-pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
-    let client = Client::new();
-
-    let release = fetch_latest_release(&client).await?;
-
-    let remote_version = release.tag_name.trim_start_matches('v').to_string();
-
-    if !is_newer(&remote_version, CURRENT_VERSION) {
-        return Ok(None);
-    }
-
-    // Find platform-specific download URL
-    let download_url = select_platform_asset(&release.assets)
-        .map(|a| a.browser_download_url.clone())
-        .unwrap_or_default();
-
-    Ok(Some(UpdateInfo {
-        version: remote_version,
-        changelog: release.body.unwrap_or_default(),
-        download_url,
-    }))
-}
-
-/// Fetch the latest release metadata from GitHub.
-async fn fetch_latest_release(client: &Client) -> Result<GitHubRelease, AppError> {
+/// Fetch release metadata from GitHub (newest first; drafts excluded).
+async fn fetch_releases(client: &Client) -> Result<Vec<GitHubRelease>, AppError> {
     let response = client
-        .get(GITHUB_RELEASES_URL)
+        .get(format!("{}?per_page=30", GITHUB_RELEASES_URL))
         .header("User-Agent", "ShareOneList-Updater")
         .header("Accept", "application/vnd.github+json")
         .send()
@@ -197,12 +194,53 @@ async fn fetch_latest_release(client: &Client) -> Result<GitHubRelease, AppError
         });
     }
 
-    response.json::<GitHubRelease>().await.map_err(|e| {
+    response.json::<Vec<GitHubRelease>>().await.map_err(|e| {
         AppError::Network {
             message: format!("Failed to parse release data: {}", e),
             retryable: true,
         }
     })
+}
+
+/// The release the given channel should update to: the newest non-draft
+/// release overall for beta, the newest non-prerelease one for stable.
+fn select_target_release<'a>(
+    releases: &'a [GitHubRelease],
+    channel: &str,
+) -> Option<&'a GitHubRelease> {
+    releases.iter().find(|release| {
+        !release.draft && (channel == CHANNEL_BETA || !release.prerelease)
+    })
+}
+
+/// Check GitHub releases for a newer version on the given channel.
+/// Returns `Some(UpdateInfo)` if a newer release exists, `None` if up to date.
+pub async fn check_update(channel: &str) -> Result<Option<UpdateInfo>, AppError> {
+    let client = Client::new();
+
+    let releases = fetch_releases(&client).await?;
+    let target = select_target_release(&releases, channel);
+
+    let Some(release) = target else {
+        return Ok(None);
+    };
+
+    let remote_version = release.tag_name.trim_start_matches('v').to_string();
+
+    if !is_newer(&remote_version, CURRENT_VERSION) {
+        return Ok(None);
+    }
+
+    // Find platform-specific download URL
+    let download_url = select_platform_asset(&release.assets)
+        .map(|a| a.browser_download_url.clone())
+        .unwrap_or_default();
+
+    Ok(Some(UpdateInfo {
+        version: remote_version,
+        changelog: release.body.clone().unwrap_or_default(),
+        download_url,
+    }))
 }
 
 /// HEAD-probe a download source; mirrors are often down, so dead sources are
@@ -218,21 +256,33 @@ async fn source_reachable(client: &Client, url: &str) -> bool {
 /// Download sources are tried in order (GitHub direct first, then China
 /// acceleration mirrors); progress is emitted via the
 /// `update-download-progress` event.
-pub async fn perform_update(version: &str, app_handle: tauri::AppHandle) -> Result<(), AppError> {
+pub async fn perform_update(
+    version: &str,
+    channel: &str,
+    app_handle: tauri::AppHandle,
+) -> Result<(), AppError> {
     let client = Client::new();
 
-    let release = fetch_latest_release(&client).await?;
+    let releases = fetch_releases(&client).await?;
 
-    let release_version = release.tag_name.trim_start_matches('v');
-    if release_version != version.trim_start_matches('v') {
+    // Only versions published on the requested channel are accepted.
+    let Some(release) = releases
+        .iter()
+        .find(|r| {
+            r.tag_name.trim_start_matches('v') == version.trim_start_matches('v')
+                && select_target_release(&releases, channel)
+                    .map(|target| target.tag_name == r.tag_name)
+                    .unwrap_or(false)
+        })
+    else {
         return Err(AppError::Network {
             message: format!(
-                "Version mismatch: expected {}, got {}",
-                version, release_version
+                "Version {} is not available on channel '{}'",
+                version, channel
             ),
             retryable: true,
         });
-    }
+    };
 
     let asset = select_platform_asset(&release.assets).ok_or_else(|| AppError::Network {
         message: "No matching asset found for this platform".to_string(),
@@ -404,5 +454,18 @@ mod tests {
         assert!(!is_newer("1.9.9", "2.0.0"));
         assert!(is_newer("v2.1.0", "2.0.0"));
         assert!(is_newer("2.1.0", "v2.0.0"));
+    }
+
+    #[test]
+    fn test_is_newer_prerelease_progression() {
+        // Beta channel: beta.N builds advance within the same base version.
+        assert!(is_newer("v2.2.0-beta.2", "2.2.0-beta.1"));
+        assert!(is_newer("v2.2.0-beta.3", "2.2.0-beta.2"));
+        // And the app version is the plain base, so beta.N counts as newer.
+        assert!(is_newer("v2.2.0-beta.2", "2.2.0"));
+        // A stable rebuild of the same base is not an update for beta users…
+        assert!(!is_newer("2.2.0", "2.2.0-beta.1"));
+        // …but the next stable is.
+        assert!(is_newer("2.2.1", "2.2.0-beta.2"));
     }
 }

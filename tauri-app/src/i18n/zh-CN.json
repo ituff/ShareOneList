@@ -206,7 +206,10 @@
     "tabAppearance": "外观与语言",
     "tabDownloads": "下载",
     "tabAI": "AI 助手",
-    "tabAbout": "关于"
+    "tabAbout": "关于",
+    "updateChannel": "更新渠道",
+    "channelStable": "正式版",
+    "channelBeta": "测试版"
   },
   "accounts": {
     "addAccount": "添加账户",
