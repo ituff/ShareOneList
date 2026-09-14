@@ -490,16 +490,21 @@ export function getAccounts(): Promise<AccountEntry[]> {
  * Check GitHub releases for a newer version.
  * Returns update info if available, null if already up to date.
  */
-export function checkUpdate(): Promise<UpdateInfo | null> {
-  return invoke<UpdateInfo | null>("check_update");
+export function checkUpdate(
+  channel: "stable" | "beta" = "stable"
+): Promise<UpdateInfo | null> {
+  return invoke<UpdateInfo | null>("check_update", { channel });
 }
 
 /**
  * Download and install a specific version update.
  * Downloads the platform-appropriate archive and applies it.
  */
-export function performUpdate(version: string): Promise<void> {
-  return invoke<void>("perform_update", { version });
+export function performUpdate(
+  version: string,
+  channel: "stable" | "beta" = "stable"
+): Promise<void> {
+  return invoke<void>("perform_update", { version, channel });
 }
 
 // ─── LLM Providers (AI assistant) ───────────────────────────────────────────

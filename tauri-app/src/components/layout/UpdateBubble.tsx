@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Sparkles, X } from "lucide-react";
 import { checkUpdate, performUpdate } from "../../lib/tauri";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useUpdateStore } from "../../stores/updateStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { formatFileSize } from "../../lib/formatters";
@@ -28,6 +29,7 @@ export function UpdateBubble() {
     setError,
   } = useUpdateStore();
   const pushNotification = useNotificationStore((s) => s.push);
+  const channel = useSettingsStore((s) => s.updateChannel);
   const checkStarted = useRef(false);
 
   // Silent check once per launch, 3s after startup; failures stay silent.
@@ -36,7 +38,7 @@ export function UpdateBubble() {
     checkStarted.current = true;
     const timer = setTimeout(async () => {
       try {
-        const result = await checkUpdate();
+        const result = await checkUpdate(channel);
         if (result) {
           setInfo(result);
           pushNotification({
@@ -74,7 +76,7 @@ export function UpdateBubble() {
     if (!info || downloading) return;
     setDownloading(true);
     try {
-      await performUpdate(info.version);
+      await performUpdate(info.version, channel);
       setDownloading(false);
       pushNotification({
         kind: "download",

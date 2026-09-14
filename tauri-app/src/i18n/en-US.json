@@ -206,7 +206,10 @@
     "tabAppearance": "Appearance & Language",
     "tabDownloads": "Downloads",
     "tabAI": "AI Assistant",
-    "tabAbout": "About"
+    "tabAbout": "About",
+    "updateChannel": "Update channel",
+    "channelStable": "Stable",
+    "channelBeta": "Beta"
   },
   "accounts": {
     "addAccount": "Add Account",

@@ -275,6 +275,7 @@ mod tests {
             },
             last_download_path: Some("C:/Downloads".to_string()),
             segment_download_concurrency: 8,
+            update_channel: "stable".to_string(),
         };
 
         mgr.save_config(&config).unwrap();

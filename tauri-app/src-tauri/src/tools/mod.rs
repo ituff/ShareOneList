@@ -5,6 +5,7 @@ pub mod updater;
 pub mod url_parser;
 
 pub mod commands {
+    use super::updater::{CHANNEL_BETA, CHANNEL_STABLE};
     use crate::errors::AppError;
     use crate::models::{ExternalDownloaderConfig, UpdateInfo};
 
@@ -22,11 +23,12 @@ pub mod commands {
         super::downloader::push_to_downloader(config).await
     }
 
-    /// Check GitHub releases for an available update.
-    /// Returns Some(UpdateInfo) if a newer version is available, None if up to date.
+    /// Check GitHub releases for an available update on the given channel
+    /// ("stable" or "beta"). Returns Some(UpdateInfo) if a newer version is
+    /// available, None if up to date.
     #[tauri::command]
-    pub async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
-        super::updater::check_update().await
+    pub async fn check_update(channel: Option<String>) -> Result<Option<UpdateInfo>, AppError> {
+        super::updater::check_update(channel.as_deref().unwrap_or(CHANNEL_STABLE)).await
     }
 
     /// Download and open the installer/archive for the specified version.
@@ -34,8 +36,14 @@ pub mod commands {
     #[tauri::command]
     pub async fn perform_update(
         version: String,
+        channel: Option<String>,
         app_handle: tauri::AppHandle,
     ) -> Result<(), AppError> {
-        super::updater::perform_update(&version, app_handle).await
+        super::updater::perform_update(
+            &version,
+            channel.as_deref().unwrap_or(CHANNEL_STABLE),
+            app_handle,
+        )
+        .await
     }
 }

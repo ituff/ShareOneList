@@ -126,6 +126,8 @@ export interface AppConfig {
   lastDownloadPath: string | null;
   /** Concurrent segment fetches for the recording stream pipeline (1-16). */
   segmentDownloadConcurrency: number;
+  /** Update channel: "stable" or "beta" (prereleases included). */
+  updateChannel: "stable" | "beta";
 }
 
 // ─── LLM Providers (AI assistant) ───────────────────────────────────────────
