@@ -528,5 +528,23 @@
     "emptyFolder": "(empty)",
     "collapse": "Collapse",
     "expand": "Expand"
+  },
+  "backup": {
+    "title": "Backup & Restore",
+    "noTokens": "Backups include all settings and accounts (no login credentials). Accounts require one re-login after import.",
+    "export": "Export config",
+    "exportDone": "Config exported",
+    "import": "Import config",
+    "importFile": "Backup file",
+    "importConfirm": "Importing overwrites your current settings and account list. Continue?",
+    "importConfirmButton": "Import now",
+    "importDone": "Imported {{count}} accounts. Please sign in again to use them.",
+    "autoTitle": "Automatic backup",
+    "autoHint": "Pick a OneDrive sync folder (local path). After every settings or account change, the latest config backup is written there automatically and synced to the cloud by OneDrive.",
+    "autoOff": "No auto backup folder set",
+    "autoChoose": "Choose folder",
+    "autoClear": "Clear",
+    "autoSetDone": "Auto backup enabled — a backup of the current config was written",
+    "autoCleared": "Auto backup disabled"
   }
 }

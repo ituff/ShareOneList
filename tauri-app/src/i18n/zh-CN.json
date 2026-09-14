@@ -528,5 +528,23 @@
     "emptyFolder": "（空）",
     "collapse": "收起",
     "expand": "展开"
+  },
+  "backup": {
+    "title": "备份与恢复",
+    "noTokens": "备份包含全部设置与账户信息（不含登录凭据）。导入后账户需要重新登录一次。",
+    "export": "导出配置",
+    "exportDone": "配置已导出",
+    "import": "导入配置",
+    "importFile": "备份文件",
+    "importConfirm": "导入将覆盖当前的设置与账户列表。确定继续吗？",
+    "importConfirmButton": "确认导入",
+    "importDone": "导入成功，已恢复 {{count}} 个账户，请重新登录后使用。",
+    "autoTitle": "自动备份",
+    "autoHint": "选择一个 OneDrive 同步文件夹（本地路径）。每次设置或账户变更后，系统会自动把最新配置备份写入该文件夹，由 OneDrive 同步到云端。",
+    "autoOff": "未设置自动备份路径",
+    "autoChoose": "选择文件夹",
+    "autoClear": "清除",
+    "autoSetDone": "已开启自动备份，并已生成当前配置备份",
+    "autoCleared": "已关闭自动备份"
   }
 }
