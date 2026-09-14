@@ -370,6 +370,7 @@ mod tests {
             last_download_path: Some("C:/Downloads".to_string()),
             segment_download_concurrency: 8,
             update_channel: "stable".to_string(),
+            auto_backup_dir: None,
         };
 
         mgr.save_config(&config).unwrap();
@@ -488,5 +489,102 @@ mod tests {
         mgr.save_accounts(&vec![]).unwrap();
         let loaded = mgr.load_accounts();
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn export_import_bundle_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        let accounts = vec![AccountEntry {
+            home_account_id: "user-1".to_string(),
+            drive_id: "drive-1".to_string(),
+            cloud_type: CloudEnvironment::Global,
+            display_name: "Test User".to_string(),
+            account_type: Some(AccountCategory::Personal),
+            alias: Some("My Drive".to_string()),
+            icon: Some("star-amber".to_string()),
+        }];
+
+        mgr.save_config(&AppConfig {
+            theme: ThemeMode::Dark,
+            language: "zh-CN".to_string(),
+            window: WindowState::default(),
+            last_download_path: None,
+            segment_download_concurrency: 8,
+            update_channel: "beta".to_string(),
+            auto_backup_dir: None,
+        })
+        .unwrap();
+        mgr.save_accounts(&accounts).unwrap();
+
+        let export_path = dir.path().join("backup.json");
+        mgr.export_bundle(&export_path).unwrap();
+
+        // Import into a SECOND manager pointing at another data dir, to
+        // prove the round trip restores state elsewhere.
+        let target = TempDir::new().unwrap();
+        let target_mgr = ConfigManager::new(target.path().to_path_buf());
+        let (config, imported, count) = target_mgr.import_bundle(&export_path).unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(config.theme, ThemeMode::Dark);
+        assert_eq!(config.update_channel, "beta");
+        assert_eq!(imported.len(), 1);
+        assert_eq!(imported[0].alias.as_deref(), Some("My Drive"));
+        assert_eq!(target_mgr.load_config().theme, ThemeMode::Dark);
+        assert_eq!(target_mgr.load_accounts()[0].icon.as_deref(), Some("star-amber"));
+    }
+
+    #[test]
+    fn import_bundle_rejects_non_backup_json() {
+        let dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        let not_backup = dir.path().join("not-backup.json");
+        fs::write(&not_backup, "{\"hello\": 1}").unwrap();
+
+        assert!(mgr.import_bundle(&not_backup).is_err());
+    }
+
+    #[test]
+    fn auto_backup_writes_payload_when_dir_configured() {
+        let dir = TempDir::new().unwrap();
+        let backup_dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        let backup_path = backup_dir.path().join("ShareOneList-backup.json");
+
+        // No backup dir configured yet: nothing written.
+        mgr.save_accounts(&[]).unwrap();
+        assert!(!backup_path.exists());
+
+        // Configure the auto backup dir (through the normal save path) and
+        // change accounts again — the backup must appear.
+        let mut config = mgr.load_config();
+        config.auto_backup_dir = Some(backup_dir.path().to_string_lossy().to_string());
+        mgr.save_config(&config).unwrap();
+        assert!(backup_path.exists(), "config save should trigger auto backup");
+
+        mgr.save_accounts(&[]).unwrap();
+        let payload: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        assert_eq!(
+            payload.get("kind").and_then(|v| v.as_str()),
+            Some("ShareOneList-backup")
+        );
+        assert!(payload.get("config").is_some());
+        assert!(payload.get("accounts").is_some());
+    }
+
+    #[test]
+    fn auto_backup_skipped_when_dir_empty() {
+        let dir = TempDir::new().unwrap();
+        let backup_dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        let backup_path = backup_dir.path().join("ShareOneList-backup.json");
+
+        let mut config = mgr.load_config();
+        config.auto_backup_dir = Some("   ".to_string());
+        mgr.save_config(&config).unwrap();
+
+        assert!(!backup_path.exists());
     }
 }
