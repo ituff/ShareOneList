@@ -353,6 +353,11 @@ ASALocalRun/
 # Local agent secrets
 AGENTS.local.md
 
+# Internal development docs (keep out of the public repository)
+AGENTS.md
+DEV_PLAN.md
+.kiro/specs/
+
 # Local runtime artifacts
 cache
 error.log
