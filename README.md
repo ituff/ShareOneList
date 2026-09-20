@@ -1,97 +1,128 @@
+<div align="center">
+
 # ShareOneList
+
+**The desktop app that gets your Microsoft 365 files under control**
+
+[![Release](https://img.shields.io/github/v/release/ituff/ShareOneList)](https://github.com/ituff/ShareOneList/releases)
+[![Downloads](https://img.shields.io/github/downloads/ituff/ShareOneList/total)](https://github.com/ituff/ShareOneList/releases)
+![Platform](https://img.shields.io/badge/platform-Windows%20x64%20%7C%20arm64%20%7C%20macOS%20Apple%20Silicon-blue)
 
 English | [简体中文](./README_zh_CN.md)
 
-> Cross-platform Microsoft 365 file manager, built with Tauri 2, Rust and React.
+[📥 Download](#-download) · [✨ Features](#-features) · [💬 Issues](https://github.com/ituff/ShareOneList/issues)
 
-ShareOneList is a file management tool focused on Microsoft 365. One app covers **Global (International) organization accounts, Global personal accounts, and China (21Vianet) accounts** on Windows (x64 / arm64) and macOS (Apple Silicon) — browse OneDrive and SharePoint, and easily download and manage **Teams meeting recordings**.
+</div>
 
-## Highlights
+---
 
-- **Three account types, one app** — Global (International) organizations, Global personal (Microsoft account), and China (21Vianet) are all first-class citizens. Each account type gets the service entries that fit it: OneDrive, SharePoint, and Teams meeting recordings.
-- **Teams meeting recordings** — Discover recordings across your OneDrive, SharePoint sites, and Microsoft Search, play them in the built-in player, and download them in one click. Recordings locked by download policies can still be saved with the built-in streaming extractor (see the [wiki](https://github.com/ituff/ShareOneList/wiki)).
-- **Cross-platform** — Windows (x64 / arm64) and macOS (Apple Silicon) builds from the same codebase
-- **OneDrive + SharePoint** — Browse your personal OneDrive, SharePoint site libraries, and shared drives in one place
-- **Multi-account** — Add multiple accounts across cloud environments, with custom aliases and icons
-- **Resumable downloads** — Pause and resume interrupted download tasks after restart
-- **Batch tasks** — Merge a batch download into one task with progress and speed
-- **File preview** — Preview images, videos, Markdown, and Office documents online
-- **Thumbnails** — File-type icons and image/video thumbnails
-- **Bookmarks** — Save frequently used folders and files for quick access
-- **Dark / light theme** — Follows the system theme or switch manually
-- **Internationalization** — Follows the system language, manually switchable between English and Simplified Chinese
+ShareOneList is a cross-platform desktop file manager built for Microsoft 365. **Global organization accounts, Global personal accounts, and China (21Vianet) accounts** all live side by side in one app; browse OneDrive and SharePoint like a native file explorer; the built-in **AI assistant** answers questions about *your* files — it searches your cloud first, then answers based on what it finds; and **Teams meeting recordings** are aggregated for instant playback and one-click download.
 
-## Getting Started
+Built with Tauri 2 + Rust + React: small installer, fast startup, low memory footprint. Your configuration and credentials never leave your machine.
 
-1. Download the latest release from [Releases](https://github.com/ituff/ShareOneList/releases)
-2. Install or run `ShareOneList`
-3. Click **Files** in the sidebar, then **Add drive** to sign in with your Microsoft account
-4. Double-click a drive to browse files
+## ✨ Features
 
-### macOS Gatekeeper
+### 🤖 AI assistant: ask your cloud directly
 
-The macOS dmg bundles a fix script (`fix-macos-gatekeeper.command`) and bilingual first-launch instructions — open the mounted dmg and double-click the script (right-click → Open if macOS asks). If that doesn't apply to your setup, follow the steps below.
+- Questions automatically search OneDrive / SharePoint, read **docx / pptx / xlsx / pdf** content, and answer with **clickable citation cards** — every claim traceable to a file
+- Works with any OpenAI-compatible provider: built-in presets for OpenAI, Azure OpenAI, DeepSeek, Alibaba Bailian, Moonshot, Zhipu, and Ollama, with connection testing and online model listing
+- Reasoning models show their thinking live, then collapse into a single line you can expand anytime
+- Chat history is stored locally: conversations survive restarts with full multi-turn context
+- **AI memory**: capture your preferences with `#remember` / `#forget`; they apply to future chats and are disclosed inside answers
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ituff/ShareOneList/main/scripts/fix-macos-gatekeeper.command | bash
-```
+### ☁️ Three flavors of Microsoft 365, one app
 
-Or run it manually after moving the app to `/Applications`:
+- Global organizations, Global personal (Microsoft account), and China (21Vianet) accounts are all first-class citizens, each with the service entries that fit it
+- Sign in to multiple accounts across cloud environments and browse in parallel, with custom aliases and icons
+- Full 21Vianet adaptation — dedicated OAuth endpoints, Graph endpoints, and SharePoint site discovery — with sessions fully isolated from the Global cloud
+
+### 🎬 Teams meeting recordings
+
+- Aggregates recordings scattered across OneDrive, SharePoint sites, and Microsoft Search
+- Play in the built-in player, download in one click; recordings locked by download policy can still be saved as MP4 with the **streaming extractor** (see the [wiki](https://github.com/ituff/ShareOneList/wiki))
+
+### 🗺️ Drive Catalog
+
+- A progressive location index across sites and document libraries: the more you browse, search, and ask, the better it knows where your files live
+- Lets global search and AI answers hit files buried deep in SharePoint document libraries
+
+### 🚀 A download engine built for big files
+
+- Resumable downloads: pick up after interruptions and app restarts
+- Batch downloads: select many files, get one task with clear progress and speed
+- Mirror acceleration: automatic fallback across download mirrors, streamed to disk with live progress
+
+### 🔄 Config backup & restore
+
+- One-click export / import of a backup with all settings and accounts (no login credentials) — migration and reinstall in one step
+- Auto backup: point it at a OneDrive-synced folder and every setting or account change writes the latest backup, synced to the cloud by OneDrive
+
+### And more
+
+- 🔍 Global search across accounts, filterable by account, file type, and modified date
+- 👁 Online preview for images, videos, Markdown, and Office documents, with thumbnails
+- 🗂 Bookmarks, share links, rename, delete, properties, convert to PDF, storage usage
+- 🖼 Details / grid / gallery layouts, drag-and-drop upload, sortable columns, collapsing breadcrumbs
+- 🔔 Notification center and in-app update checks with stable / beta update channels
+- 🌗 Dark / light theme; English, 简体中文, 日本語, and Deutsch UI
+
+## 📥 Download
+
+Grab the installer for your platform from [Releases](https://github.com/ituff/ShareOneList/releases):
+
+| Platform | Installer |
+|---|---|
+| Windows 10/11 x64 | `.exe` setup / `.msi` |
+| Windows 10/11 arm64 | `.exe` setup / `.msi` / portable `.zip` |
+| macOS (Apple Silicon) | `.dmg` |
+
+> Want new features as soon as they ship? Switch the update channel to **Beta** in **Settings → About** to receive pre-release versions.
+
+<details>
+<summary><b>macOS says the app "can't be verified"?</b></summary>
+
+The dmg bundles a fix script (`fix-macos-gatekeeper.command`) with bilingual instructions — mount the dmg and double-click the script (if macOS still complains, right-click → Open). Or run manually:
 
 ```bash
 xattr -cr /Applications/ShareOneList.app
 open /Applications/ShareOneList.app
 ```
 
-If the command reports insufficient permissions, use `sudo xattr -cr /Applications/ShareOneList.app`. Alternatively, right-click the app and choose **Open** to confirm once. The helper script is available at [scripts/fix-macos-gatekeeper.command](./scripts/fix-macos-gatekeeper.command).
+If the command reports insufficient permissions, use `sudo xattr -cr /Applications/ShareOneList.app`. The helper script is at [scripts/fix-macos-gatekeeper.command](./scripts/fix-macos-gatekeeper.command).
 
-## Configuration
+</details>
 
-The app ships with default Azure AD Client IDs for both Global and 21Vianet. If you want to use your own Azure AD applications, register them at [portal.azure.com](https://portal.azure.com) (Global) and [portal.azure.cn](https://portal.azure.cn) (21Vianet) separately and configure the client IDs in the app.
+## 🚀 Getting started
 
-## Features
+1. Install and launch ShareOneList
+2. Open **Files**, click **Add drive**, and sign in with your Microsoft account (add as many accounts as you like, across cloud environments)
+3. Double-click a drive to browse — or use **Search** / **Ask AI** straight from the home page
 
-- [x] OneDrive file browsing
-- [x] SharePoint site & document library browsing
-- [x] Global (International) organization & personal accounts, and 21Vianet (China) support
-- [x] Teams meeting recordings: aggregate, play, and download (streaming extractor for download-restricted recordings)
-- [x] Multi-account management with custom aliases and icons
-- [x] Batch download merged into one task
-- [x] Resumable download with progress and speed
-- [x] Download to a user-selected save path with last-path memory
-- [x] File sharing & link generation
-- [x] File preview (Image, Video, Markdown, Office Online)
-- [x] Image / video thumbnails
-- [x] Sortable file list (name / size / modified, ascending or descending)
-- [x] Explorer-style breadcrumbs that collapse long paths
-- [x] Bookmarks
-- [x] Rename / Delete / Properties
-- [x] Convert to PDF
-- [x] Storage capacity display
-- [x] List / Grid / Gallery layout modes
-- [x] Drag-and-drop upload
-- [x] Dark / light theme
-- [x] System language / English / 简体中文
-- [x] In-app update check
-- [ ] Mobile release
+## 📸 Screenshots
 
-## Screenshots
+| Home | Cloud |
+|---|---|
+| ![](./ScreenShots/HomePage.png) | ![](./ScreenShots/CloudPage.png) |
+| **Drive Hub** | **File browsing** |
+| ![](./ScreenShots/DriveHubPage.png) | ![](./ScreenShots/DrivePage.png) |
+| **Grid layout** | **Task manager** |
+| ![](./ScreenShots/GridLayout.png) | ![](./ScreenShots/TaskManager.png) |
+| **Bookmarks** | **Tools** |
+| ![](./ScreenShots/BookmarksPage.png) | ![](./ScreenShots/ToolsPage.png) |
+| **Settings** | **Dark mode** |
+| ![](./ScreenShots/SettingsPage.png) | ![](./ScreenShots/DarkMode.png) |
 
-![HomePage](./ScreenShots/HomePage.png)
-![CloudPage](./ScreenShots/CloudPage.png)
-![DriveHubPage](./ScreenShots/DriveHubPage.png)
-![DrivePage](./ScreenShots/DrivePage.png)
-![GridLayout](./ScreenShots/GridLayout.png)
-![TaskManager](./ScreenShots/TaskManager.png)
-![BookmarksPage](./ScreenShots/BookmarksPage.png)
-![ToolsPage](./ScreenShots/ToolsPage.png)
-![SettingsPage](./ScreenShots/SettingsPage.png)
-![DarkMode](./ScreenShots/DarkMode.png)
+## ⚙️ Advanced configuration
 
-## Development
+The app ships with default Azure AD client IDs for both Global and 21Vianet — no setup needed. To use your own Azure AD applications, register them at [portal.azure.com](https://portal.azure.com) (Global) and [portal.azure.cn](https://portal.azure.cn) (21Vianet) separately and configure the client IDs in the app.
+
+## 🛠️ Build from source
 
 ```bash
-cd tauri-app
+git clone https://github.com/ituff/ShareOneList.git
+cd ShareOneList/tauri-app
 npm install
 npm run tauri dev
 ```
+
+See [AGENTS.md](./AGENTS.md) for the tech stack and architecture conventions, [DEV_PLAN.md](./DEV_PLAN.md) for the roadmap, and [.kiro/specs/](./.kiro/specs/) for feature specifications.
