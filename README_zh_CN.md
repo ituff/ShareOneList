@@ -30,16 +30,16 @@ ShareOneList 是一款专注 Microsoft 365 的跨平台桌面文件管理器。*
 - 聊天历史本地保存：重启不丢会话，多轮上下文完整保留
 - **AI 记忆**：用 `#remember` / `#forget` 沉淀你的偏好与习惯，后续对话自动生效，回答中会披露引用了哪些记忆
 
+### 🎬 Teams 会议录像
+
+- 聚合散落在 OneDrive、SharePoint 站点和 Microsoft Search 中的会议录像
+- 内置播放器直接播放，一键下载；下载被策略限制的录像可用**流式提取**保存为 MP4（详见 [Wiki](https://github.com/ituff/ShareOneList/wiki)）
+
 ### ☁️ 三种 Microsoft 365，一个应用
 
 - 国际版组织账户、国际版个人账户、世纪互联账户都是一等公民，各自提供合适的服务入口
 - 多账户同时登录、并行浏览，可自定义别名和图标
 - 世纪互联全流程适配：独立 OAuth 端点、Graph 端点、SharePoint 站点发现，与国际版会话完全隔离互不影响
-
-### 🎬 Teams 会议录像
-
-- 聚合散落在 OneDrive、SharePoint 站点和 Microsoft Search 中的会议录像
-- 内置播放器直接播放，一键下载；下载被策略限制的录像可用**流式提取**保存为 MP4（详见 [Wiki](https://github.com/ituff/ShareOneList/wiki)）
 
 ### 🗺️ Drive Catalog 目录地图
 
@@ -125,4 +125,4 @@ npm install
 npm run tauri dev
 ```
 
-技术栈与架构约定见 [AGENTS.md](./AGENTS.md)，开发计划见 [DEV_PLAN.md](./DEV_PLAN.md)，功能规格见 [.kiro/specs/](./.kiro/specs/)。
+欢迎通过 [Issues](https://github.com/ituff/ShareOneList/issues) 反馈问题或建议。

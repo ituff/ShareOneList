@@ -30,16 +30,16 @@ Built with Tauri 2 + Rust + React: small installer, fast startup, low memory foo
 - Chat history is stored locally: conversations survive restarts with full multi-turn context
 - **AI memory**: capture your preferences with `#remember` / `#forget`; they apply to future chats and are disclosed inside answers
 
+### 🎬 Teams meeting recordings
+
+- Aggregates recordings scattered across OneDrive, SharePoint sites, and Microsoft Search
+- Play in the built-in player, download in one click; recordings locked by download policy can still be saved as MP4 with the **streaming extractor** (see the [wiki](https://github.com/ituff/ShareOneList/wiki))
+
 ### ☁️ Three flavors of Microsoft 365, one app
 
 - Global organizations, Global personal (Microsoft account), and China (21Vianet) accounts are all first-class citizens, each with the service entries that fit it
 - Sign in to multiple accounts across cloud environments and browse in parallel, with custom aliases and icons
 - Full 21Vianet adaptation — dedicated OAuth endpoints, Graph endpoints, and SharePoint site discovery — with sessions fully isolated from the Global cloud
-
-### 🎬 Teams meeting recordings
-
-- Aggregates recordings scattered across OneDrive, SharePoint sites, and Microsoft Search
-- Play in the built-in player, download in one click; recordings locked by download policy can still be saved as MP4 with the **streaming extractor** (see the [wiki](https://github.com/ituff/ShareOneList/wiki))
 
 ### 🗺️ Drive Catalog
 
@@ -125,4 +125,4 @@ npm install
 npm run tauri dev
 ```
 
-See [AGENTS.md](./AGENTS.md) for the tech stack and architecture conventions, [DEV_PLAN.md](./DEV_PLAN.md) for the roadmap, and [.kiro/specs/](./.kiro/specs/) for feature specifications.
+Questions or feedback? Open an [issue](https://github.com/ituff/ShareOneList/issues).
