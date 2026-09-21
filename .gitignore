@@ -375,3 +375,9 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
+
+# Internal dev docs and editor config (never public)
+.kiro/
+.vscode/
+AGENTS.md
+AGENTS.local.md
