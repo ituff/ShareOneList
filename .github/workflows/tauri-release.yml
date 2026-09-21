@@ -1,0 +1,180 @@
+name: Tauri Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        id: create-release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+          prerelease: false
+          generateReleaseNotes: true
+
+  build-and-upload:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-x64
+          - platform: windows-latest
+            target: aarch64-pc-windows-msvc
+            label: windows-arm64
+          - platform: macos-14
+            target: aarch64-apple-darwin
+            label: macos-aarch64
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tauri-app/src-tauri -> target
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tauri-app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: tauri-app
+        run: npm ci
+
+      - name: Build and release Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tauri-app
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+
+      - name: Package legacy upgrade zip
+        if: matrix.label == 'windows-x64' || matrix.label == 'windows-arm64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATRIX_LABEL: ${{ matrix.label }}
+        run: |
+          $releaseDir = "tauri-app/src-tauri/target/${{ matrix.target }}/release"
+          $exe = Join-Path $releaseDir "ShareOneList.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Main binary not found: $exe"
+            exit 1
+          }
+          $staging = Join-Path $env:RUNNER_TEMP "shareonelist-upgrade"
+          Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          Copy-Item -LiteralPath $exe -Destination (Join-Path $staging "ShareOneList.exe")
+          $arch = if ($env:MATRIX_LABEL -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $zip = Join-Path $env:RUNNER_TEMP "ShareOneList-${{ github.ref_name }}-$arch.zip"
+          Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zip -Force
+          gh release upload "${{ github.ref_name }}" $zip --clobber
+
+      - name: Drop language suffix from MSI asset names
+        if: matrix.label == 'windows-x64' || matrix.label == 'windows-arm64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MATRIX_LABEL: ${{ matrix.label }}
+        run: |
+          # WiX names MSIs with the install language (e.g. ..._x64_en-US.msi).
+          # We ship a single-language MSI, so re-upload it without the suffix.
+          $arch = if ($env:MATRIX_LABEL -eq 'windows-arm64') { "arm64" } else { "x64" }
+          $assets = gh release view "${{ github.ref_name }}" --json assets --jq ".assets[].name"
+          foreach ($asset in $assets) {
+            if ($asset -like "ShareOneList_*_${arch}_en-US.msi") {
+              $newName = $asset -replace '_en-US\.msi$', '.msi'
+              $tmp = Join-Path $env:RUNNER_TEMP $newName
+              gh release download "${{ github.ref_name }}" --pattern $asset --output $tmp --clobber
+              gh release delete-asset "${{ github.ref_name }}" $asset --yes
+              gh release upload "${{ github.ref_name }}" $tmp --clobber
+              Remove-Item -LiteralPath $tmp -Force
+              Write-Output "Renamed $asset -> $newName"
+            }
+          }
+
+      - name: Add Gatekeeper helper files into the dmg
+        if: matrix.label == 'macos-aarch64'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Hosted runners refuse `hdiutil attach` (Operation not permitted),
+          # so the dmg is rebuilt from a staging folder instead of patched:
+          # app + Applications symlink + Gatekeeper helper files.
+          app_dir="tauri-app/src-tauri/target/${{ matrix.target }}/release/bundle/macos/ShareOneList.app"
+          dmg_dir="tauri-app/src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
+          dmg_file="$dmg_dir/$(ls "$dmg_dir" | grep '\.dmg$' | head -1)"
+          echo "Rebuilding $dmg_file"
+
+          staging="$RUNNER_TEMP/dmg-staging"
+          rm -rf "$staging"
+          mkdir -p "$staging/ShareOneList"
+          cp -R "$app_dir" "$staging/ShareOneList.app"
+          ln -s /Applications "$staging/Applications"
+          cp "scripts/fix-macos-gatekeeper.command" "$staging/ShareOneList/"
+          cp "scripts/README-首次启动必读-macOS.txt" "$staging/ShareOneList/"
+          chmod +x "$staging/ShareOneList/fix-macos-gatekeeper.command"
+
+          hdiutil create -volname "ShareOneList" -srcfolder "$staging" -ov -format UDZO -o "$dmg_file"
+          gh release upload "${{ github.ref_name }}" "$dmg_file" --clobber
+
+      - name: Remove macOS updater archive from release assets
+        if: matrix.label == 'macos-aarch64'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Release format is dmg-only for macOS; drop the .app.tar.gz updater
+          # artifact if the bundler produced one (the in-app updater downloads
+          # the dmg directly).
+          $assets = gh release view "${{ github.ref_name }}" --json assets --jq ".assets[].name"
+          foreach ($asset in $assets) {
+            if ($asset -like "*.app.tar.gz" -or $asset -like "*.app.tar.gz.sig") {
+              gh release delete-asset "${{ github.ref_name }}" $asset --yes
+              Write-Output "Deleted asset: $asset"
+            }
+          }
+
+  publish-release:
+    needs: [create-release, build-and-upload]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        uses: eregon/publish-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          release_id: ${{ needs.create-release.outputs.release_id }}
