@@ -2,6 +2,13 @@
 
 每个版本发布前在此文件顶部添加对应章节，CI 会把该章节内容作为 GitHub Release 的更新说明（应用内"检查更新"气泡与通知也会显示这些内容）。
 
+## v2.3.0-beta.1
+
+- 新增"云盘挂载"（设置 → 挂载）：内置本地 WebDAV 网关，把 OneDrive / SharePoint 文档库直接挂载为 Windows 资源管理器盘符或 macOS Finder 卷，无需安装第三方驱动
+- 挂载支持多账号、多挂载点：范围可选我的 OneDrive / 站点文档库 / 子目录，Windows 下可指定盘符；网关随应用自启，App 退出后挂载即离线
+- Windows WebDAV 诊断与一键修复：自动检测 WebClient 服务、Basic 认证策略与 50 MB 单文件上限并提权修复；无 WebClient 的环境（如 Windows Home）可复制地址与凭据，交给第三方 WebDAV 客户端使用
+- 会议录像新增"下载会议脚本"：录像预览页可把 Teams 会议转录一键导出为 .txt 纯文本；转录经 Stream 播放器安全获取，他人共享的会议录像同样支持（首次需先播放视频几秒）
+
 ## v2.2.0
 
 v2.2.0 正式版发布，包含测试版（beta.1 – beta.3）的全部功能。
