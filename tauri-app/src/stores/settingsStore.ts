@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /** Sub-tab within the settings page ("ai" is deep-link target for memory editing). */
-export type SettingsTab = "appearance" | "downloads" | "ai" | "backup" | "about";
+export type SettingsTab = "appearance" | "downloads" | "ai" | "backup" | "mount" | "about";
 /** Update channel: stable releases only, or prereleases included. */
 export type UpdateChannel = "stable" | "beta";
 import type { AppConfig, ThemeMode, WindowState } from "../lib/types";

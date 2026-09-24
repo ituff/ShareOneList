@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use serde::Deserialize;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -11,6 +12,7 @@ use crate::errors::AppError;
 use crate::graph::GraphClient;
 use crate::models::{
     Drive, DriveItem, DriveQuota, MeetingRecording, RecordingSource, ShareOptions, Site,
+    TranscriptExport,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1552,6 +1554,487 @@ pub async fn get_meeting_recordings(
     Ok(recordings)
 }
 
+/// Strip the final file extension ("a.b.mp4" -> "a.b"); names without a dot
+/// are returned unchanged.
+fn file_base_name(name: &str) -> &str {
+    match name.rsplit_once('.') {
+        Some((base, _)) => base,
+        None => name,
+    }
+}
+
+/// Does `child_name` name the transcript of a recording whose base name is
+/// `recording_base_lower` (already lowercased)? Teams stores the transcript
+/// as `{recording}.vtt` next to the recording; rank 0 is that exact match,
+/// rank 1 covers variants that extend the base name (language suffixes).
+fn transcript_match_rank(child_name: &str, recording_base_lower: &str) -> Option<u8> {
+    let (child_base, ext) = child_name.rsplit_once('.')?;
+    if !ext.eq_ignore_ascii_case("vtt") {
+        return None;
+    }
+    let child_base_lower = child_base.to_lowercase();
+    if child_base_lower == recording_base_lower {
+        Some(0)
+    } else if !recording_base_lower.is_empty() && child_base_lower.starts_with(recording_base_lower)
+    {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// Normalize a VTT cue timestamp ("00:05:12.340" / "05:12.340") to "[00:05:12]".
+fn format_cue_timestamp(raw: &str) -> String {
+    let main = raw.trim().split(['.', ',']).next().unwrap_or("");
+    let mut parts: Vec<&str> = main.split(':').filter(|p| !p.is_empty()).collect();
+    while parts.len() < 3 {
+        parts.insert(0, "0");
+    }
+    let len = parts.len();
+    let padded: Vec<String> = parts[len - 3..]
+        .iter()
+        .map(|p| format!("{:0>2}", p))
+        .collect();
+    format!("[{}]", padded.join(":"))
+}
+
+/// Remove VTT inline markup (voice spans `<v Name>`, color/class spans, word
+/// timing tags) from a cue text line.
+fn strip_vtt_tags(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut depth = 0usize;
+    for ch in line.chars() {
+        match ch {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Unwrap bracketed speaker forms like `["John Doe"]` / `[John Doe]`.
+fn unbracket_speaker(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() >= 2 {
+        trimmed[1..trimmed.len() - 1]
+            .trim_matches('"')
+            .trim()
+            .to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Split a cue's text lines into (speaker, text). Teams puts the speaker on
+/// its own line before the utterance; single-line cues may carry a
+/// `Speaker: text` prefix instead. Lines without any speaker hint yield None.
+fn split_cue_speaker(lines: &[String]) -> (Option<String>, String) {
+    if lines.is_empty() {
+        return (None, String::new());
+    }
+    if lines.len() >= 2 {
+        let speaker = unbracket_speaker(&lines[0]);
+        let text = lines[1..]
+            .iter()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return (Some(speaker), text);
+    }
+    // Single line: `Speaker: text` only when the colon sits in a plausible
+    // name prefix (≤4 words, colon followed by a space), so URLs and clock
+    // times inside the text are left alone.
+    let line = strip_vtt_tags(&lines[0]);
+    let trimmed = line.trim();
+    if let Some((prefix, rest)) = trimmed.split_once(": ") {
+        let prefix = prefix.trim();
+        let rest = rest.trim();
+        let word_count = if prefix.is_empty() { 0 } else { prefix.split(' ').count() };
+        if !rest.is_empty() && word_count >= 1 && word_count <= 4 {
+            return (Some(unbracket_speaker(prefix)), rest.to_string());
+        }
+    }
+    (None, trimmed.to_string())
+}
+
+/// One flattened VTT cue: normalized start timestamp, optional speaker, text.
+type Cue = (String, Option<String>, String);
+
+/// Finalize the cue being accumulated, if any.
+fn push_cue(cues: &mut Vec<Cue>, start: &mut Option<String>, lines: &mut Vec<String>) {
+    if let Some(start_ts) = start.take() {
+        let (speaker, text) = split_cue_speaker(lines);
+        cues.push((start_ts, speaker, text));
+    }
+    lines.clear();
+}
+
+/// Convert a Teams meeting transcript VTT into plain-text script lines:
+/// `[hh:mm:ss] Speaker: text`, merging consecutive cues by the same speaker
+/// into one line (the "grouped" export shape). Metadata (`WEBVTT`, `Kind:`,
+/// `Language:`) and `NOTE`/`STYLE` blocks are dropped.
+fn vtt_to_script_lines(vtt: &str) -> Vec<String> {
+    let mut cues: Vec<Cue> = Vec::new();
+    let mut cue_start: Option<String> = None;
+    let mut cue_lines: Vec<String> = Vec::new();
+
+    for raw_line in vtt.lines() {
+        let line = raw_line.trim_end();
+        if line.trim().is_empty() {
+            push_cue(&mut cues, &mut cue_start, &mut cue_lines);
+            continue;
+        }
+        if let Some(idx) = line.find("-->") {
+            cue_start = Some(format_cue_timestamp(line[..idx].trim()));
+            continue;
+        }
+        if cue_start.is_none() {
+            // Header/metadata region (WEBVTT, Kind:, Language:) or a NOTE block.
+            continue;
+        }
+        let cleaned = strip_vtt_tags(line);
+        if !cleaned.trim().is_empty() {
+            cue_lines.push(cleaned);
+        }
+    }
+    push_cue(&mut cues, &mut cue_start, &mut cue_lines);
+
+    render_script_lines(cues)
+}
+
+/// Flatten cues into script lines, merging consecutive cues by the same
+/// speaker into one line.
+fn render_script_lines(cues: Vec<Cue>) -> Vec<String> {
+    let mut lines_out: Vec<String> = Vec::new();
+    let mut last_speaker: Option<String> = None;
+    for (start, speaker, text) in cues {
+        if text.is_empty() {
+            continue;
+        }
+        // Same speaker keeps talking: append to the line already on the page.
+        if speaker.is_some() && speaker == last_speaker {
+            if let Some(prev) = lines_out.last_mut() {
+                prev.push(' ');
+                prev.push_str(&text);
+                continue;
+            }
+        }
+        // Only cues with a timing line reach here, so start is always set.
+        let line = match &speaker {
+            Some(s) => format!("{} {}: {}", start, s, text),
+            None => format!("{} {}", start, text),
+        };
+        lines_out.push(line);
+        last_speaker = speaker;
+    }
+    lines_out
+}
+
+/// One entry of the Teams transcript JSON served by
+/// `temporaryDownloadUrl&format=json` (see ms-teams-sharepoint-downloader).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawTranscriptEntry {
+    #[serde(default)]
+    start_offset: Option<String>,
+    #[serde(default)]
+    speaker_display_name: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawTranscriptJson {
+    #[serde(default)]
+    entries: Vec<RawTranscriptEntry>,
+}
+
+/// Parse a transcript time offset ("HH:MM:SS[.fff]" or raw seconds) into
+/// "[hh:mm:ss]".
+fn parse_time_offset(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.contains(':') {
+        return Some(format_cue_timestamp(raw));
+    }
+    let secs: f64 = raw.parse().ok()?;
+    if !secs.is_finite() || secs < 0.0 {
+        return None;
+    }
+    let total = secs as u64;
+    Some(format!(
+        "[{:02}:{:02}:{:02}]",
+        total / 3600,
+        (total % 3600) / 60,
+        total % 60
+    ))
+}
+
+/// Convert Teams transcript JSON (`{ entries: [...] }`) into cues.
+fn json_transcript_to_cues(json: &str) -> Option<Vec<Cue>> {
+    let parsed: RawTranscriptJson = serde_json::from_str(json).ok()?;
+    Some(
+        parsed
+            .entries
+            .into_iter()
+            .filter_map(|entry| {
+                let text = entry.text?.trim().to_string();
+                if text.is_empty() {
+                    return None;
+                }
+                let start = entry
+                    .start_offset
+                    .as_deref()
+                    .and_then(parse_time_offset)
+                    .unwrap_or_default();
+                let speaker = entry.speaker_display_name.filter(|s| !s.trim().is_empty());
+                Some((start, speaker, text))
+            })
+            .collect(),
+    )
+}
+
+/// Convert a captured transcript payload — VTT or Teams transcript JSON —
+/// into plain-text script lines.
+fn transcript_to_script_lines(text: &str) -> Vec<String> {
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    if trimmed.starts_with('{') {
+        if let Some(cues) = json_transcript_to_cues(trimmed) {
+            let lines = render_script_lines(cues);
+            if !lines.is_empty() {
+                return lines;
+            }
+        }
+    }
+    vtt_to_script_lines(text)
+}
+
+/// Characters kept unescaped inside a Graph item path segment.
+const ITEM_PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
+
+/// Percent-encode each segment of a Graph item path (names may contain
+/// spaces, `#`, `&`...). "/Recordings/My meeting" -> "/Recordings/My%20meeting".
+fn encode_item_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| utf8_percent_encode(segment, ITEM_PATH_SEGMENT).to_string())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Build the drive-relative address (`root:/…`) for a file inside the folder
+/// described by a Graph `parentReference.path` ("/drive/root:/Recordings" for
+/// OneDrive, "/drives/{id}/root:/General/Recordings" for SharePoint).
+fn item_path_under_parent(parent_path: &str, file_name: &str) -> String {
+    let root_relative = parent_path
+        .split_once("root:")
+        .map(|(_, rest)| rest.trim_end_matches('/'))
+        .unwrap_or("");
+    format!("root:{}/{}", root_relative, file_name)
+}
+
+/// Fetch a drive item by addressing it under its parent folder path — no
+/// folder enumeration, so this also works for shared recordings where the
+/// user has file-level access but cannot list the parent folder.
+async fn fetch_item_by_parent_path(
+    client: &GraphClient,
+    token: &str,
+    drive_id: &str,
+    parent_path: &str,
+    file_name: &str,
+) -> Result<DriveItem, AppError> {
+    let url = format!(
+        "{}/drives/{}/{}?$select={}",
+        client.base_url(),
+        drive_id,
+        encode_item_path(&item_path_under_parent(parent_path, file_name)),
+        DRIVE_ITEM_SELECT
+    );
+    let response = client
+        .request_with_retry(token, |http, tkn| http.get(&url).bearer_auth(tkn))
+        .await?;
+    let raw: RawDriveItem = response.json().await.map_err(|e| AppError::GraphApi {
+        message: format!("Failed to parse item response: {}", e),
+        status_code: 0,
+    })?;
+    Ok(DriveItem::from(raw))
+}
+
+/// Locate the `.vtt` transcript Teams stores next to a meeting recording.
+///
+/// Primary strategy: address `{recording}.vtt` directly under the parent
+/// folder path — shared recordings often grant file-level access only, so
+/// folder listings may 404. Fallback: enumerate the parent folder to catch
+/// language-variant transcript names; listing failures degrade to "no
+/// candidates" rather than failing the export.
+async fn find_recording_transcript(
+    client: &GraphClient,
+    token: &str,
+    drive_id: &str,
+    item_id: &str,
+) -> Result<Option<DriveItem>, AppError> {
+    let base = client.base_url();
+    let item_url = format!(
+        "{}/drives/{}/items/{}?$select={}",
+        base, drive_id, item_id, DRIVE_ITEM_SELECT
+    );
+    let response = client
+        .request_with_retry(token, |http, tkn| http.get(&item_url).bearer_auth(tkn))
+        .await?;
+    let raw: RawDriveItem = response.json().await.map_err(|e| AppError::GraphApi {
+        message: format!("Failed to parse recording response: {}", e),
+        status_code: 0,
+    })?;
+    let recording = DriveItem::from(raw);
+    let Some(parent) = recording.parent_reference.as_ref() else {
+        return Ok(None);
+    };
+    let parent_drive = if parent.drive_id.is_empty() {
+        drive_id
+    } else {
+        parent.drive_id.as_str()
+    };
+
+    // 1) Exact `.vtt` twin, addressed by path.
+    if let Some(parent_path) = parent.path.as_deref() {
+        let twin = format!("{}.vtt", file_base_name(&recording.name));
+        match fetch_item_by_parent_path(client, token, parent_drive, parent_path, &twin).await {
+            Ok(item) => return Ok(Some(item)),
+            Err(AppError::GraphApi { status_code: 404, .. })
+            | Err(AppError::GraphApi { status_code: 403, .. }) => {}
+            Err(e) => return Err(e),
+        }
+    }
+
+    // 2) Fallback: enumerate the parent folder (language-variant names).
+    let children_url = format!(
+        "{}/drives/{}/items/{}/children?$top=200&$select={}",
+        base, parent_drive, parent.id, DRIVE_ITEM_SELECT
+    );
+    let children = match fetch_all_children(
+        client,
+        token,
+        children_url,
+        MAX_CHILDREN_PER_CONTAINER,
+        false,
+    )
+    .await
+    {
+        Ok(children) => children,
+        Err(AppError::GraphApi { status_code: 404, .. })
+        | Err(AppError::GraphApi { status_code: 403, .. }) => Vec::new(),
+        Err(e) => return Err(e),
+    };
+
+    let recording_base = file_base_name(&recording.name).to_lowercase();
+    let mut best: Option<(u8, DriveItem)> = None;
+    for child in children {
+        let Some(rank) = transcript_match_rank(&child.name, &recording_base) else {
+            continue;
+        };
+        let better = best.as_ref().map_or(true, |(current, _)| rank < *current);
+        if better {
+            best = Some((rank, child));
+        }
+        if matches!(best.as_ref(), Some((0, _))) {
+            break;
+        }
+    }
+    Ok(best.map(|(_, item)| item))
+}
+
+/// Export a meeting recording's transcript as a plain-text script file.
+///
+/// Finds the `.vtt` transcript stored next to the recording, converts it to
+/// `[hh:mm:ss] Speaker: text` lines and writes the text to `save_path`.
+/// `Ok(None)` means the meeting has no transcript — the frontend surfaces a
+/// dedicated "not transcribed" notice for that case.
+#[tauri::command]
+pub async fn export_recording_transcript(
+    cloud_env: String,
+    drive_id: String,
+    item_id: String,
+    save_path: String,
+    home_account_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+) -> Result<Option<TranscriptExport>, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+
+    let client = GraphClient::new(env);
+    let Some(transcript) = find_recording_transcript(&client, &token, &drive_id, &item_id).await?
+    else {
+        return Ok(None);
+    };
+
+    let bytes = download_item_bytes(&client, &token, &drive_id, &transcript.id).await?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "Transcript file is too large to export".to_string(),
+            field: "item_id".to_string(),
+        });
+    }
+    let vtt = String::from_utf8_lossy(&bytes);
+    let lines = vtt_to_script_lines(&vtt);
+    if lines.is_empty() {
+        return Ok(None);
+    }
+    let mut content = lines.join("\n");
+    content.push('\n');
+    std::fs::write(&save_path, content).map_err(|e| AppError::FileSystem {
+        message: format!("Failed to write transcript: {}", e),
+        path: save_path.clone(),
+    })?;
+
+    Ok(Some(TranscriptExport {
+        entry_count: lines.len() as u32,
+        source_name: transcript.name.clone(),
+    }))
+}
+
+/// Export a transcript payload already fetched by the in-page capture pipeline
+/// (the embedded player's own transcript API, which works for shared
+/// recordings the user cannot reach as drive files). Accepts VTT or the Teams
+/// transcript JSON; converts to `[hh:mm:ss] Speaker: text` lines and writes
+/// the text to `save_path`. `Ok(None)` when nothing usable remains.
+#[tauri::command]
+pub async fn export_transcript_text(
+    save_path: String,
+    transcript_text: String,
+) -> Result<Option<TranscriptExport>, AppError> {
+    if transcript_text.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "Transcript file is too large to export".to_string(),
+            field: "save_path".to_string(),
+        });
+    }
+    let lines = transcript_to_script_lines(&transcript_text);
+    if lines.is_empty() {
+        return Ok(None);
+    }
+    let mut content = lines.join("\n");
+    content.push('\n');
+    std::fs::write(&save_path, content).map_err(|e| AppError::FileSystem {
+        message: format!("Failed to write transcript: {}", e),
+        path: save_path.clone(),
+    })?;
+
+    Ok(Some(TranscriptExport {
+        entry_count: lines.len() as u32,
+        source_name: "player-capture".to_string(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1666,6 +2149,192 @@ mod tests {
         .unwrap();
 
         assert!(DriveItem::from(raw).is_folder);
+    }
+
+    #[test]
+    fn transcript_dispatch_handles_teams_json_entries() {
+        // The JSON shape temporaryDownloadUrl&format=json returns; offsets
+        // come both as raw seconds and HH:MM:SS strings.
+        let json = concat!(
+            "{\"entries\":[",
+            "{\"startOffset\":\"5.2\",\"speakerDisplayName\":\"John Doe\",\"text\":\"Good morning.\"},",
+            "{\"startOffset\":\"00:00:09\",\"speakerDisplayName\":\"John Doe\",\"text\":\"Let's start.\"},",
+            "{\"startOffset\":\"62.5\",\"speakerDisplayName\":\"Jane Smith\",\"text\":\"Morning!\"}",
+            "]}"
+        );
+        assert_eq!(
+            transcript_to_script_lines(json),
+            vec![
+                "[00:00:05] John Doe: Good morning. Let's start.",
+                "[00:01:02] Jane Smith: Morning!",
+            ]
+        );
+        // VTT input still routes through the VTT parser.
+        let vtt = "WEBVTT
+
+00:00:03.000 --> 00:00:04.000
+Hello.
+";
+        assert_eq!(transcript_to_script_lines(vtt), vec!["[00:00:03] Hello."]);
+        // Unusable input yields nothing.
+        assert!(transcript_to_script_lines("not a transcript").is_empty());
+    }
+
+    #[test]
+    fn transcript_path_addresses_root_relative_folders_from_both_drive_flavors() {
+        // OneDrive parentReference style.
+        assert_eq!(
+            item_path_under_parent("/drive/root:/Recordings", "Meeting.vtt"),
+            "root:/Recordings/Meeting.vtt"
+        );
+        // Recording directly at the drive root.
+        assert_eq!(
+            item_path_under_parent("/drive/root:", "Meeting.vtt"),
+            "root:/Meeting.vtt"
+        );
+        // SharePoint drives carry the drive id in the parent path.
+        assert_eq!(
+            item_path_under_parent("/drives/abc/root:/General/Recordings", "M.vtt"),
+            "root:/General/Recordings/M.vtt"
+        );
+        // A trailing slash on the parent path must not double up.
+        assert_eq!(
+            item_path_under_parent("/drive/root:/Recordings/", "M.vtt"),
+            "root:/Recordings/M.vtt"
+        );
+    }
+
+    #[test]
+    fn item_path_encoding_escapes_url_meaningful_characters() {
+        assert_eq!(encode_item_path("/Recordings/My meeting"), "/Recordings/My%20meeting");
+        assert_eq!(encode_item_path("/Recordings/Review #3"), "/Recordings/Review%20%233");
+        // Reserved unreserved characters stay readable.
+        assert_eq!(
+            encode_item_path("/Recordings/Q3-review_final.v2"),
+            "/Recordings/Q3-review_final.v2"
+        );
+    }
+
+    #[test]
+    fn transcript_match_prefers_exact_vtt_and_rejects_other_extensions() {
+        let base = "2026-08-20 14-30 - sprint review".to_lowercase();
+
+        // Exact {recording}.vtt twin is rank 0, any casing.
+        assert_eq!(
+            transcript_match_rank("2026-08-20 14-30 - Sprint Review.vtt", &base),
+            Some(0)
+        );
+        assert_eq!(
+            transcript_match_rank("2026-08-20 14-30 - SPRINT REVIEW.VTT", &base),
+            Some(0)
+        );
+        // Extended names (language variants) still match, at lower rank.
+        assert_eq!(
+            transcript_match_rank("2026-08-20 14-30 - Sprint Review-en.vtt", &base),
+            Some(1)
+        );
+        // Unrelated vtt files and non-vtt twins are not transcripts.
+        assert_eq!(transcript_match_rank("other-meeting.vtt", &base), None);
+        assert_eq!(
+            transcript_match_rank("2026-08-20 14-30 - Sprint Review.docx", &base),
+            None
+        );
+        assert_eq!(
+            transcript_match_rank("2026-08-20 14-30 - Sprint Review.mp4", &base),
+            None
+        );
+        // An empty recording base only matches a bare ".vtt" exactly.
+        assert_eq!(transcript_match_rank("whatever.vtt", ""), None);
+        assert_eq!(transcript_match_rank(".vtt", ""), Some(0));
+    }
+
+    #[test]
+    fn file_base_name_strips_only_the_final_extension() {
+        assert_eq!(file_base_name("meeting.mp4"), "meeting");
+        assert_eq!(file_base_name("a.b.mp4"), "a.b");
+        assert_eq!(file_base_name("noextension"), "noextension");
+    }
+
+    #[test]
+    fn cue_timestamps_normalize_to_bracketed_hh_mm_ss() {
+        assert_eq!(format_cue_timestamp("00:00:05.120"), "[00:00:05]");
+        assert_eq!(format_cue_timestamp("01:02:03,456"), "[01:02:03]");
+        // VTT permits minute-only timestamps; normalize to full h:m:s.
+        assert_eq!(format_cue_timestamp("05:12.500"), "[00:05:12]");
+    }
+
+    #[test]
+    fn vtt_script_converts_teams_speaker_lines_and_groups_consecutive_cues() {
+        let vtt = "WEBVTT
+Kind: captions
+Language: en-US
+
+            00:00:05.120 --> 00:00:08.400
+John Doe
+Good morning everyone.
+
+            00:00:09.000 --> 00:00:11.000
+John Doe
+Let's get started.
+
+            00:00:12.000 --> 00:00:13.500
+Jane Smith
+Morning!
+";
+
+        assert_eq!(
+            vtt_to_script_lines(vtt),
+            vec![
+                "[00:00:05] John Doe: Good morning everyone. Let's get started.",
+                "[00:00:12] Jane Smith: Morning!",
+            ]
+        );
+    }
+
+    #[test]
+    fn vtt_script_handles_inline_speaker_and_speakerless_captions() {
+        // Single-line `Speaker: text` cues.
+        let inline = "WEBVTT
+
+            00:00:03.250 --> 00:00:05.670
+John Doe: Hello there.
+";
+        assert_eq!(
+            vtt_to_script_lines(inline),
+            vec!["[00:00:03] John Doe: Hello there."]
+        );
+
+        // Captions without any speaker attribution.
+        let plain = "WEBVTT
+
+            00:00:10.000 --> 00:00:12.000
+Welcome to the review.
+";
+        assert_eq!(
+            vtt_to_script_lines(plain),
+            vec!["[00:00:10] Welcome to the review."]
+        );
+
+        // Bracketed speaker form, inline markup and NOTE blocks are cleaned.
+        let decorated = "WEBVTT
+
+NOTE this is a note
+with two lines
+
+            00:01:00.000 --> 00:01:02.000
+[\"Jane\"]
+<v Jane>Please <c.colorE5E7E5>look</c> here.</v>
+";
+        assert_eq!(
+            vtt_to_script_lines(decorated),
+            vec!["[00:01:00] Jane: Please look here."]
+        );
+
+        // Metadata-only input produces nothing usable.
+        assert!(vtt_to_script_lines("WEBVTT
+Kind: captions
+Language: en-US
+").is_empty());
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub mod models;
 pub mod store;
 pub mod tools;
 pub mod transfer;
+pub mod webdav;
 
 use auth::AuthModule;
 use config::ConfigManager;
@@ -96,6 +97,16 @@ pub fn run() {
             app.manage(store::chat_history::ChatHistoryStore::new(
                 app_data_dir.clone(),
             ));
+            // WebDAV gateway: starts the loopback listener in the background
+            // so Explorer/Finder mounts survive app restarts (fixed port).
+            let webdav_manager = webdav::WebDavManager::new(app.handle().clone(), &app_data_dir);
+            let webdav_for_start = webdav_manager.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = webdav_for_start.start().await {
+                    eprintln!("[webdav] gateway failed to start: {}", e);
+                }
+            });
+            app.manage(webdav_manager);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -128,6 +139,8 @@ pub fn run() {
             graph::commands::get_sharepoint_sites,
             graph::commands::get_site_drives,
             graph::commands::get_meeting_recordings,
+            graph::commands::export_recording_transcript,
+            graph::commands::export_transcript_text,
             graph::commands::probe_download_allowed,
             transfer::commands::download_file,
             transfer::commands::begin_stream_download,
@@ -178,6 +191,14 @@ pub fn run() {
             catalog::commands::catalog_cancel_index,
             catalog::commands::catalog_tree,
             catalog::commands::catalog_usage_recent,
+            webdav::commands::webdav_status,
+            webdav::commands::webdav_create_mount,
+            webdav::commands::webdav_delete_mount,
+            webdav::commands::webdav_mount,
+            webdav::commands::webdav_unmount,
+            webdav::commands::webdav_diagnose,
+            webdav::commands::webdav_apply_fix,
+            webdav::commands::webdav_copy_mount_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

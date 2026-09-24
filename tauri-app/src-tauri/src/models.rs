@@ -80,6 +80,16 @@ pub struct MeetingRecording {
     pub source_name: String,
 }
 
+/// Result of exporting a meeting recording's transcript to a local .txt file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptExport {
+    /// Number of timestamped script lines written to the file.
+    pub entry_count: u32,
+    /// Name of the source .vtt transcript the script was built from.
+    pub source_name: String,
+}
+
 /// Transfer progress emitted via Tauri events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

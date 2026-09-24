@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, Download, ExternalLink, Loader2, RotateCw, Video } from "lucide-react";
+import { AlertCircle, Download, ExternalLink, FileText, Loader2, RotateCw, Video } from "lucide-react";
 import { dirname, downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   beginStreamDownload,
   downloadFile,
+  exportRecordingTranscript,
+  exportTranscriptText,
   probeDownloadAllowed,
   getPreviewUrl,
   getTextContent,
@@ -32,7 +34,18 @@ interface SolMessage {
   text?: string;
   message?: string;
   isDrm?: boolean;
+  // Transcript capture protocol (see stream_boot.js).
+  requestId?: string;
+  status?: "ok" | "none" | "unknown" | "error";
+  url?: string | null;
+  languageTag?: string | null;
 }
+
+/** Reply to a transcript request we sent into the player frame. */
+type TranscriptReply =
+  | { kind: "result"; status: "ok" | "none" | "unknown" | "error"; url?: string | null; message?: string }
+  | { kind: "data"; text: string }
+  | { kind: "timeout" };
 
 function isSolMessage(data: unknown): data is SolMessage {
   return (
@@ -149,6 +162,12 @@ export function PreviewPage({ tab }: PreviewPageProps) {
   }, [item, tab.driveId, tab.cloudEnv]);
 
   // ── Stream-capture download (in-webview pipeline) ──────────────────────────
+  // Transcript capture state: the player frame caches the transcript URL once
+  // seen (passively or via SOL_TRANSCRIPT_FETCH); requests are correlated by
+  // requestId through these waiters.
+  const transcriptUrlRef = useRef<string | null>(null);
+  const transcriptWaitersRef = useRef(new Map<string, (reply: TranscriptReply) => void>());
+
   const handleStreamMessage = useCallback((event: MessageEvent) => {
     const data = event.data;
     if (!isSolMessage(data)) return;
@@ -156,6 +175,27 @@ export function PreviewPage({ tab }: PreviewPageProps) {
       case "SOL_CAPTURED":
         if (data.captureId) setCapturedId(data.captureId);
         break;
+      case "SOL_TRANSCRIPT_FOUND":
+        if (data.url && !transcriptUrlRef.current) transcriptUrlRef.current = data.url;
+        break;
+      case "SOL_TRANSCRIPT_RESULT":
+      case "SOL_TRANSCRIPT_DATA": {
+        const waiter = data.requestId && transcriptWaitersRef.current.get(data.requestId);
+        if (waiter) {
+          transcriptWaitersRef.current.delete(data.requestId!);
+          if (data.type === "SOL_TRANSCRIPT_DATA") {
+            waiter({ kind: "data", text: data.text ?? "" });
+          } else {
+            waiter({
+              kind: "result",
+              status: data.status ?? "unknown",
+              url: data.url,
+              message: data.message,
+            });
+          }
+        }
+        break;
+      }
       case "SOL_PROGRESS":
         setStreamProgress(data.text ?? "");
         break;
@@ -183,6 +223,24 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     window.addEventListener("message", handleStreamMessage);
     return () => window.removeEventListener("message", handleStreamMessage);
   }, [handleStreamMessage]);
+
+  /** Send a transcript request into the player frame and await its reply. */
+  const askPlayerFrame = useCallback((message: { type: string; url?: string }, timeoutMs: number): Promise<TranscriptReply> => {
+    const frame = iframeRef.current?.contentWindow;
+    if (!frame) return Promise.resolve({ kind: "timeout" });
+    return new Promise((resolve) => {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const timer = setTimeout(() => {
+        transcriptWaitersRef.current.delete(requestId);
+        resolve({ kind: "timeout" });
+      }, timeoutMs);
+      transcriptWaitersRef.current.set(requestId, (reply) => {
+        clearTimeout(timer);
+        resolve(reply);
+      });
+      frame.postMessage({ ...message, requestId }, "*");
+    });
+  }, []);
 
   // Abort the in-page pipeline when the tab unmounts mid-download.
   useEffect(() => {
@@ -236,6 +294,94 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     setStreamState("idle");
     setStreamProgress("");
   }, [capturedId]);
+
+  // Transcript export. Primary route: the embedded player's own transcript
+  // API, captured in-page (works for shared recordings whose .vtt sibling the
+  // user cannot read as a drive file). Fallback: the .vtt Teams stores next
+  // to the recording in its drive folder. Both convert to a plain-text
+  // meeting script of `[hh:mm:ss] Speaker: text` lines.
+  const [isExportingTranscript, setIsExportingTranscript] = useState(false);
+  const handleTranscriptDownload = useCallback(async () => {
+    if (!item || isExportingTranscript) return;
+    try {
+      const dir = lastDownloadPath ?? (await downloadDir());
+      const baseName = item.name.replace(/\.[^.]+$/, "") || "recording";
+      const selected = await save({ defaultPath: await join(dir, `${baseName}.txt`) });
+      if (!selected) return;
+      setLastDownloadPath(await dirname(selected));
+      setIsExportingTranscript(true);
+
+      // 1) Player capture route (embedded preview only).
+      if (isEmbed && iframeRef.current?.contentWindow) {
+        const fetchResult = transcriptUrlRef.current
+          ? ({ kind: "result", status: "ok", url: transcriptUrlRef.current } as TranscriptReply)
+          : await askPlayerFrame({ type: "SOL_TRANSCRIPT_FETCH" }, 8000);
+        if (fetchResult.kind === "result" && fetchResult.status === "none") {
+          // The player API definitively reports this meeting was never
+          // transcribed.
+          addToast("info", t("preview.transcriptNotFound"));
+          return;
+        }
+        if (fetchResult.kind === "result" && fetchResult.status === "ok" && fetchResult.url) {
+          const dataReply = await askPlayerFrame(
+            { type: "SOL_TRANSCRIPT_DOWNLOAD", url: fetchResult.url },
+            30000
+          );
+          if (dataReply.kind === "data" && dataReply.text.trim()) {
+            const result = await exportTranscriptText(selected, dataReply.text);
+            if (result) {
+              addToast("success", t("preview.transcriptSaved", { count: result.entryCount }));
+            } else {
+              addToast("info", t("preview.transcriptNotFound"));
+            }
+            return;
+          }
+          if (dataReply.kind === "result" && dataReply.status === "error") {
+            addToast("error", `${t("preview.transcriptFailed")}: ${dataReply.message ?? ""}`);
+            return;
+          }
+          // Timeout/unknown content fetch — fall through to the drive route.
+        }
+        // Otherwise (no context yet / unknown) fall through to the drive route.
+      }
+
+      // 2) Drive route: sibling .vtt next to the recording.
+      const fallback = await exportRecordingTranscript(
+        tab.cloudEnv,
+        tab.driveId,
+        item.id,
+        selected,
+        tab.homeAccountId
+      );
+      if (fallback) {
+        addToast("success", t("preview.transcriptSaved", { count: fallback.entryCount }));
+        return;
+      }
+      // Neither route found anything. When the player embed exists but had no
+      // context yet, playback usually fixes it — nudge instead of dead-ending.
+      if (isEmbed) {
+        addToast("info", t("preview.transcriptNeedPlayback"));
+      } else {
+        addToast("info", t("preview.transcriptNotFound"));
+      }
+    } catch (err) {
+      addToast("error", getErrorMessage(err));
+    } finally {
+      setIsExportingTranscript(false);
+    }
+  }, [
+    item,
+    isExportingTranscript,
+    isEmbed,
+    lastDownloadPath,
+    setLastDownloadPath,
+    askPlayerFrame,
+    tab.cloudEnv,
+    tab.driveId,
+    tab.homeAccountId,
+    addToast,
+    t,
+  ]);
 
   const handleDownload = useCallback(async () => {
     if (!item || isDownloading) return;
@@ -331,6 +477,21 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           >
             <Download className="h-3.5 w-3.5" />
           </button>
+          {tab.fromRecordings && (
+            <button
+              onClick={handleTranscriptDownload}
+              disabled={isExportingTranscript}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t("preview.transcriptDownload")}
+              aria-label={t("preview.transcriptDownload")}
+            >
+              {isExportingTranscript ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileText className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
           {item.webUrl && (
             <a
               href={item.webUrl}

@@ -18,6 +18,7 @@ import { TaskManager } from "../tasks/TaskManager";
 import { ToolsPage as ToolsPageComponent } from "../tools/ToolsPage";
 import { UpdateChecker } from "../tools/UpdateChecker";
 import { BackupSettings } from "../settings/BackupSettings";
+import { WebDavMountSettings } from "../settings/WebDavMountSettings";
 import { HomePage } from "../home/HomePage";
 import { LlmSettings } from "../settings/LlmSettings";
 import { MemorySettings } from "../settings/MemorySettings";
@@ -98,7 +99,8 @@ function FilesPage() {
       recording.item,
       recording.driveId,
       activeTab.cloudEnv,
-      activeTab.homeAccountId
+      activeTab.homeAccountId,
+      { fromRecordings: true }
     );
   };
 
@@ -288,6 +290,7 @@ function SettingsPage() {
             ["downloads", t("settings.tabDownloads")],
             ["ai", t("settings.tabAI")],
             ["backup", t("settings.tabBackup")],
+            ["mount", t("settings.tabMount")],
             ["about", t("settings.tabAbout")],
           ] as [SettingsTab, string][]
         ).map(([tab, label]) => (
@@ -385,6 +388,8 @@ function SettingsPage() {
       )}
 
       {settingsTab === "backup" && <BackupSettings />}
+
+      {settingsTab === "mount" && <WebDavMountSettings />}
 
       {settingsTab === "about" && (
       <>

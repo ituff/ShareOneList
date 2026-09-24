@@ -41,12 +41,15 @@ interface TabStoreState {
   /**
    * Open a preview tab for a file.
    * If a preview tab for that item already exists, switch to it.
+   * `options.fromRecordings` marks tabs opened from the meeting-recordings
+   * page, enabling recording-only actions (transcript download).
    */
   openPreviewTab: (
     item: DriveItem,
     driveId: string,
     cloudEnv: CloudEnvironment,
-    homeAccountId: string
+    homeAccountId: string,
+    options?: { fromRecordings?: boolean }
   ) => void;
 
   /**
@@ -178,7 +181,7 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
     get().loadFolder(newTab.id, "root");
   },
 
-  openPreviewTab: (item, driveId, cloudEnv, homeAccountId) => {
+  openPreviewTab: (item, driveId, cloudEnv, homeAccountId, options) => {
     const { tabs } = get();
     const existing = tabs.find((t) => t.kind === "preview" && t.previewItem?.id === item.id);
     if (existing) {
@@ -194,6 +197,7 @@ export const useTabStore = create<TabStoreState>((set, get) => ({
       cloudEnv,
       homeAccountId,
       previewItem: item,
+      fromRecordings: options?.fromRecordings,
       currentFolderId: "root",
       breadcrumbs: [],
       items: [],

@@ -64,6 +64,14 @@ export interface MeetingRecording {
   sourceName: string;
 }
 
+/** Result of exporting a recording's transcript to a local .txt file. */
+export interface TranscriptExport {
+  /** Number of timestamped script lines written to the file. */
+  entryCount: number;
+  /** Name of the source .vtt transcript the script was built from. */
+  sourceName: string;
+}
+
 // ─── Navigation & UI State ──────────────────────────────────────────────────
 
 /** A single breadcrumb entry for folder path navigation. */
@@ -92,6 +100,9 @@ export interface TabState {
   homeAccountId: string;
   /** The file being previewed when kind is "preview". */
   previewItem?: DriveItem;
+  /** True when the preview was opened from the meeting-recordings page;
+   * enables recording-only actions such as the transcript download. */
+  fromRecordings?: boolean;
   currentFolderId: string;
   breadcrumbs: BreadcrumbItem[];
   items: DriveItem[];
@@ -483,4 +494,60 @@ export interface CatalogUsageSummary {
   grounding: number;
   groundingRead: number;
   recentQuestions: string[];
+}
+
+// ─── WebDAV gateway (Explorer / Finder mounting) ────────────────────────────
+
+/** One mountable cloud location bound to a single account. */
+export interface WebDavMountEntry {
+  mountId: string;
+  cloudEnv: CloudEnvironment;
+  homeAccountId: string;
+  driveId: string;
+  /** Graph item id of the exposed subtree; empty string = drive root. */
+  rootItemId: string;
+  label: string;
+  /** Preferred Windows drive letter (e.g. "Z"); null = auto-pick at mount time. */
+  driveLetter?: string | null;
+}
+
+/** A mount plus runtime info for the settings UI. */
+export interface WebDavMountStatus extends WebDavMountEntry {
+  /** Full WebDAV URL of the mount (gateway base + /m/{id}). */
+  url: string;
+  /** Best-effort OS-level mount detection. */
+  mounted: boolean;
+}
+
+/** Gateway server status. */
+export interface WebDavStatus {
+  running: boolean;
+  port: number;
+  baseUrl: string;
+  mounts: WebDavMountStatus[];
+}
+
+/** URL + gateway credentials for third-party WebDAV clients. */
+export interface WebDavConnectionInfo {
+  url: string;
+  username: string;
+  password: string;
+}
+
+/** Windows platform diagnosis for the OS WebDAV client (issue codes are
+ * stable strings the UI maps to localized copy). */
+export interface WebDavDiagnosis {
+  platform: "windows" | "macos" | "other";
+  /** "running" | "stopped" | "transition" | "not_installed" | "unknown" */
+  webclientState: string | null;
+  basicAuthLevel: number | null;
+  fileSizeLimitInBytes: number | null;
+  issues: string[];
+  fixable: boolean;
+}
+
+/** Result of mounting in the OS: drive letter ("X:") on Windows, the
+ * webdav:// URL handed to Finder on macOS. */
+export interface WebDavMountResult {
+  mountPoint: string;
 }

@@ -21,6 +21,7 @@ import type {
   SearchScope,
   ShareOptions,
   Site,
+  TranscriptExport,
   UpdateInfo,
 } from "./types";
 
@@ -280,6 +281,44 @@ export function getMeetingRecordings(
   homeAccountId: string
 ): Promise<MeetingRecording[]> {
   return invoke<MeetingRecording[]>("get_meeting_recordings", { cloudEnv, homeAccountId });
+}
+
+/**
+ * Export a meeting recording's transcript as a plain-text script file.
+ * Finds the .vtt transcript Teams stores next to the recording, converts it
+ * to `[hh:mm:ss] Speaker: text` lines and writes it to savePath.
+ * Resolves null when the meeting has no transcript file.
+ */
+export function exportRecordingTranscript(
+  cloudEnv: CloudEnvironment,
+  driveId: string,
+  itemId: string,
+  savePath: string,
+  homeAccountId: string
+): Promise<TranscriptExport | null> {
+  return invoke<TranscriptExport | null>("export_recording_transcript", {
+    cloudEnv,
+    driveId,
+    itemId,
+    savePath,
+    homeAccountId,
+  });
+}
+
+/**
+ * Export a transcript payload already fetched by the in-page capture pipeline
+ * (the embedded player's own transcript API — works for shared recordings the
+ * user cannot reach as drive files). Accepts VTT or Teams transcript JSON.
+ * Resolves null when nothing usable remains in the payload.
+ */
+export function exportTranscriptText(
+  savePath: string,
+  transcriptText: string
+): Promise<TranscriptExport | null> {
+  return invoke<TranscriptExport | null>("export_transcript_text", {
+    savePath,
+    transcriptText,
+  });
 }
 
 /**
@@ -865,4 +904,71 @@ export function catalogUsageRecent(
   accountId: string | null
 ): Promise<CatalogUsageSummary> {
   return invoke<CatalogUsageSummary>("catalog_usage_recent", { accountId });
+}
+
+// ─── WebDAV Gateway (Explorer / Finder mounting) ────────────────────────────
+
+import type {
+  WebDavConnectionInfo,
+  WebDavDiagnosis,
+  WebDavMountEntry,
+  WebDavMountResult,
+  WebDavStatus,
+} from "./types";
+
+/** Gateway server status: running, port, and per-mount states. */
+export function webdavStatus(): Promise<WebDavStatus> {
+  return invoke<WebDavStatus>("webdav_status");
+}
+
+/**
+ * Create a mount point for a drive (or a subfolder of it, via rootPath).
+ * The account must have a live session; rootPath is resolved server-side.
+ */
+export function webdavCreateMount(params: {
+  cloudEnv: CloudEnvironment;
+  homeAccountId: string;
+  driveId: string;
+  rootPath: string;
+  label: string;
+  driveLetter?: string | null;
+}): Promise<WebDavMountEntry> {
+  return invoke<WebDavMountEntry>("webdav_create_mount", {
+    cloudEnv: params.cloudEnv,
+    homeAccountId: params.homeAccountId,
+    driveId: params.driveId,
+    rootPath: params.rootPath ?? "",
+    label: params.label,
+    driveLetter: params.driveLetter ?? null,
+  });
+}
+
+/** Delete a mount point (OS mappings, if any, stay until unmounted). */
+export function webdavDeleteMount(mountId: string): Promise<void> {
+  return invoke<void>("webdav_delete_mount", { mountId });
+}
+
+/** Map the mount in the OS (drive letter on Windows, Finder volume on macOS). */
+export function webdavMount(mountId: string): Promise<WebDavMountResult> {
+  return invoke<WebDavMountResult>("webdav_mount", { mountId });
+}
+
+/** Eject / disconnect the OS mapping for a mount. */
+export function webdavUnmount(mountId: string): Promise<void> {
+  return invoke<void>("webdav_unmount", { mountId });
+}
+
+/** Diagnose the OS WebDAV client (Windows: WebClient service + registry). */
+export function webdavDiagnose(): Promise<WebDavDiagnosis> {
+  return invoke<WebDavDiagnosis>("webdav_diagnose");
+}
+
+/** Apply the elevated Windows fix (UAC prompt); re-run diagnose afterwards. */
+export function webdavApplyFix(): Promise<void> {
+  return invoke<void>("webdav_apply_fix");
+}
+
+/** Copy-out URL + gateway credentials for third-party WebDAV clients. */
+export function webdavCopyMountInfo(mountId: string): Promise<WebDavConnectionInfo> {
+  return invoke<WebDavConnectionInfo>("webdav_copy_mount_info", { mountId });
 }

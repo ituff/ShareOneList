@@ -20,9 +20,18 @@
 //   up   SOL_ERROR {captureId, message, isDrm}         — fatal pipeline error
 //   down SOL_START {captureId, port, uploadToken}      — app frame hands back the loopback channel
 //   down SOL_CANCEL {captureId}                        — user aborted
+// Transcript capture (same technique as the reference project: the Stream
+// player's own transcript APIs, called with the page's cookies + captured
+// bearer, work for shared recordings the user cannot enumerate on disk):
+//   up   SOL_TRANSCRIPT_FOUND {languageTag}            — player fetched transcript metadata; URL cached
+//   down SOL_TRANSCRIPT_FETCH {requestId}              — ask this frame to resolve the transcript URL
+//   up   SOL_TRANSCRIPT_RESULT {requestId, status, url?, message?} — status: ok|none|unknown|error
+//   down SOL_TRANSCRIPT_DOWNLOAD {requestId, url}      — ask this frame to fetch the VTT/JSON text
+//   up   SOL_TRANSCRIPT_DATA {requestId, text}         — transcript content payload
 // SOL_* messages received from child frames are relayed upward; SOL_START /
 // SOL_CANCEL are relayed downward until the frame holding that captureId
-// picks them up.
+// picks them up. Transcript requests are answered locally when this frame
+// has a capture/context, else relayed down.
 (function () {
   'use strict';
   if (window.__SOL_STREAM_BOOT__) return;
@@ -34,6 +43,9 @@
   var capture = null; // { captureId, manifestUrl, spopactoken }
   var running = null; // { captureId, abort: AbortController }
   var spBearer = null; // Authorization header seen on /_api/v2.x player calls
+  var transcriptUrl = null; // temporaryDownloadUrl seen/captured for this media
+  var transcriptLang = null;
+  var spContext = null; // { sitePath, driveId, itemId, hasTranscripts } from g_fileInfo
 
   function hostOf(url) {
     try { return new URL(url).host; } catch (e) { return ''; }
@@ -57,6 +69,7 @@
   var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
   if (nativeFetch) {
     window.fetch = function (input, init) {
+      var promise = nativeFetch(input, init);
       try {
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         if (url.indexOf('videomanifest') !== -1 && !/tempauth/i.test(url)) {
@@ -69,15 +82,206 @@
         }
         // Capture the SharePoint Stream API bearer the player uses on
         // /_api/v2.x calls — needed when manifest segments point back at
-        // sharepoint.com REST endpoints instead of plain cookie-authed files.
+        // sharepoint.com REST endpoints instead of plain cookie-authed files,
+        // and for the proactive transcript metadata fetch.
         if (/\/_api\/v[0-9.]+\//.test(url) && url.indexOf('sharepoint') !== -1) {
           var auth = extractHeader([input, init], 'authorization');
           if (auth && /^Bearer\s/i.test(auth)) spBearer = auth;
         }
+        // Transcript metadata responses (passive): cache the pre-authorized
+        // temporaryDownloadUrl so the app frame never needs to ask twice.
+        // Exclude the VTT content endpoint and the /cdnmedia/ variant
+        // (binary protobuf, not JSON). The clone runs in a detached handler
+        // registered before the promise is handed back, so the tee happens
+        // before the player reads the body.
+        if (isTranscriptMetadataUrl(url)) {
+          promise.then(function (response) {
+            try {
+              response.clone().json().then(function (data) {
+                var t = pickTranscript(data);
+                if (t && t.temporaryDownloadUrl) {
+                  transcriptUrl = t.temporaryDownloadUrl;
+                  transcriptLang = t.languageTag || null;
+                  reportUp({ type: 'SOL_TRANSCRIPT_FOUND', languageTag: transcriptLang });
+                }
+              }).catch(function () { /* not JSON — ignore */ });
+            } catch (e) { /* best-effort capture */ }
+          }, function () { /* network error — nothing to capture */ });
+        }
       } catch (e) { /* best-effort capture */ }
-      return nativeFetch(input, init);
+      return promise;
     };
   }
+
+  function isTranscriptMetadataUrl(url) {
+    return typeof url === 'string' &&
+      url.indexOf('transcripts') !== -1 &&
+      url.indexOf('/content') === -1 &&
+      url.indexOf('/cdnmedia/') === -1;
+  }
+
+  // ── Transcript capture (ported from content.js) ───────────────────────────
+
+  // g_fileInfo['.spItemUrl'] carries the drive/item identity at page load —
+  // before any playback — so the proactive fetch works without a manifest.
+  function tryReadFileInfo() {
+    if (spContext) return true;
+    var g = window.g_fileInfo;
+    var spItemUrl = g && g['.spItemUrl'];
+    if (!spItemUrl) return false;
+    try {
+      var u = new URL(spItemUrl);
+      var m = u.pathname.match(/^(\/(?:personal|sites|teams)\/[^/]+)\/_api\/v[0-9.]+\/drives\/([^/]+)\/items\/([^/?]+)/);
+      if (!m) return false;
+      spContext = { sitePath: m[1], driveId: m[2], itemId: m[3], hasTranscripts: g.hasTranscripts };
+      return true;
+    } catch (e) { return false; }
+  }
+  (function pollFileInfo() {
+    var tries = 0;
+    var iv = setInterval(function () {
+      if (tryReadFileInfo() || ++tries >= 10) clearInterval(iv);
+    }, 1000);
+  })();
+
+  // Drive/item identity for the media in this frame: the captured videomanifest
+  // docid parameter (present once playback starts), then g_fileInfo, then the
+  // page path for the site prefix.
+  function deriveTranscriptContext() {
+    var driveId = null, itemId = null, sitePath = null;
+    if (capture && capture.manifestUrl) {
+      try {
+        var docidRaw = new URL(capture.manifestUrl).searchParams.get('docid');
+        if (docidRaw) {
+          var docUrl = new URL(decodeURIComponent(docidRaw));
+          var m = docUrl.pathname.match(/^(\/(?:personal|sites|teams)\/[^/]+)\/_api\/v[0-9.]+\/drives\/([^/]+)\/items\/([^/?]+)/);
+          if (m) { sitePath = m[1]; driveId = m[2]; itemId = m[3]; }
+        }
+      } catch (e) { /* ignore */ }
+    }
+    if ((!driveId || !itemId || !sitePath) && spContext) {
+      if (!driveId) driveId = spContext.driveId || null;
+      if (!itemId) itemId = spContext.itemId || null;
+      if (!sitePath) sitePath = spContext.sitePath || null;
+    }
+    if (!sitePath) {
+      var lm = location.pathname.match(/^(\/(?:personal|sites|teams)\/[^/]+)/);
+      if (lm) sitePath = lm[0];
+    }
+    return { driveId: driveId, itemId: itemId, sitePath: sitePath };
+  }
+
+  // SharePoint Stream returns transcript metadata in several shapes:
+  //  - { media: { transcripts: [ { temporaryDownloadUrl, ... } ] } }
+  //  - { value: [ { temporaryDownloadUrl, ... } ] }
+  //  - { temporaryDownloadUrl, ... }
+  function pickTranscript(data) {
+    if (!data) return null;
+    if (data.media && Array.isArray(data.media.transcripts) && data.media.transcripts.length > 0) {
+      return data.media.transcripts[0];
+    }
+    if (Array.isArray(data.value) && data.value.length > 0 && data.value[0] && data.value[0].temporaryDownloadUrl) {
+      for (var i = 0; i < data.value.length; i++) {
+        if (data.value[i].isDefault) return data.value[i];
+      }
+      return data.value[0];
+    }
+    if (data.temporaryDownloadUrl) return data;
+    return null;
+  }
+
+  // Proactively resolve the transcript URL via the player's own APIs (the
+  // same calls the player makes when the Transcript panel opens), so the user
+  // does not have to open that panel first. Cookie auth in this frame, plus
+  // the captured bearer when available.
+  function fetchTranscriptMetadata() {
+    if (transcriptUrl) {
+      return Promise.resolve({ status: 'ok', url: transcriptUrl });
+    }
+    if (spContext && spContext.hasTranscripts === false) {
+      return Promise.resolve({ status: 'none' });
+    }
+    var ctx = deriveTranscriptContext();
+    if (!ctx.driveId || !ctx.itemId || !ctx.sitePath) {
+      return Promise.resolve({ status: 'unknown' });
+    }
+    var baseUrl = location.origin + ctx.sitePath + '/_api/v2.1/drives/' + ctx.driveId + '/items/' + ctx.itemId;
+    var expandUrl = baseUrl + '?select=media%2Ftranscripts%2CaudioTracks&%24expand=media%2Ftranscripts%2Cmedia%2FaudioTracks';
+    var collectionUrl = baseUrl + '/media/transcripts';
+    var headers = { 'Accept': 'application/json' };
+    if (spBearer) headers['Authorization'] = spBearer;
+
+    return fetch(expandUrl, { credentials: 'include', headers: headers }).then(function (r) {
+      return r.ok ? r : fetch(collectionUrl, { credentials: 'include', headers: headers });
+    }).then(function (r) {
+      if (!r.ok) return { status: 'unknown' };
+      return r.json().then(function (data) {
+        var t = pickTranscript(data);
+        if (t && t.temporaryDownloadUrl) {
+          transcriptUrl = t.temporaryDownloadUrl;
+          transcriptLang = t.languageTag || null;
+          return { status: 'ok', url: transcriptUrl };
+        }
+        // The expand call returns { media: {} } / { media: { transcripts: [] } }
+        // and the collection call { value: [] } for never-transcribed media.
+        var definitivelyEmpty =
+          (data && data.media && (!Array.isArray(data.media.transcripts) || data.media.transcripts.length === 0)) ||
+          (data && Array.isArray(data.value) && data.value.length === 0);
+        return { status: definitivelyEmpty ? 'none' : 'unknown' };
+      });
+    }).catch(function () { return { status: 'unknown' }; });
+  }
+
+  // Fetch the transcript content itself in this frame: the URL is
+  // pre-authorized but cookie-authed hosts need the page's session, and MCAS
+  // tenants must rewrite sharepoint.com hosts through the .mcas.ms gateway
+  // (same rewrite the reference project does).
+  function fetchTranscriptText(url) {
+    var fetchUrl = url;
+    try {
+      var parsed = new URL(fetchUrl);
+      var here = location.hostname;
+      if (here.indexOf('.mcas.ms') === here.length - 8 &&
+          parsed.hostname.indexOf('.sharepoint.com') === parsed.hostname.length - 15) {
+        parsed.hostname = parsed.hostname + '.mcas.ms';
+        fetchUrl = parsed.href;
+      }
+    } catch (e) { /* keep original URL */ }
+    return fetch(fetchUrl, { credentials: 'include' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    });
+  }
+
+  function handleTranscriptMessage(d) {
+    if (d.type === 'SOL_TRANSCRIPT_FETCH') {
+      fetchTranscriptMetadata().then(function (res) {
+        reportUp({
+          type: 'SOL_TRANSCRIPT_RESULT',
+          requestId: d.requestId,
+          status: res.status,
+          url: res.url || null,
+          languageTag: transcriptLang
+        });
+      });
+      return true;
+    }
+    if (d.type === 'SOL_TRANSCRIPT_DOWNLOAD' && d.url) {
+      fetchTranscriptText(d.url).then(function (text) {
+        reportUp({ type: 'SOL_TRANSCRIPT_DATA', requestId: d.requestId, text: text });
+      }, function (err) {
+        reportUp({
+          type: 'SOL_TRANSCRIPT_RESULT',
+          requestId: d.requestId,
+          status: 'error',
+          message: (err && err.message) || String(err)
+        });
+      });
+      return true;
+    }
+    return false; // nothing to try here — let it flow to child frames
+  }
+
 
   function extractHeader(args, headerName) {
     var key = headerName.toLowerCase();
@@ -122,8 +326,14 @@
       } else {
         forwardDown(d);
       }
+    } else if (d.type === 'SOL_TRANSCRIPT_FETCH' || d.type === 'SOL_TRANSCRIPT_DOWNLOAD') {
+      // Answered in-frame when this frame has a capture/context; else relayed
+      // toward the player frame.
+      if (!handleTranscriptMessage(d)) forwardDown(d);
     } else {
-      // SOL_CAPTURED / SOL_PROGRESS / SOL_DONE / SOL_ERROR from a child frame.
+      // SOL_CAPTURED / SOL_PROGRESS / SOL_DONE / SOL_ERROR /
+      // SOL_TRANSCRIPT_FOUND / SOL_TRANSCRIPT_RESULT / SOL_TRANSCRIPT_DATA
+      // from a child frame.
       reportUp(d);
     }
   });
