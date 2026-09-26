@@ -107,8 +107,7 @@ pub fn mount_drive(
 ) -> Result<String, String> {
     #[cfg(windows)]
     {
-        let _ = username;
-        windows_mount(port, mount_id, password, preferred_letter)
+        windows_mount(port, mount_id, username, password, preferred_letter)
     }
 
     #[cfg(target_os = "macos")]
@@ -224,10 +223,12 @@ mod win {
 
     pub fn add_connection(
         remote: &str,
+        username: &str,
         password: &str,
         local_letter: Option<&str>,
     ) -> u32 {
         let mut remote_w = wide(remote);
+        let username_w = wide(username);
         let password_w = wide(password);
         let mut local_w = local_letter.map(|l| wide(&format!("{}:", l.trim_end_matches(':'))));
 
@@ -242,12 +243,12 @@ mod win {
             WNetAddConnection2W(
                 &netres,
                 PCWSTR::from_raw(password_w.as_ptr()),
-                PCWSTR::null(),
+                PCWSTR::from_raw(username_w.as_ptr()),
                 NET_CONNECT_FLAGS(0),
             )
         };
         // keep the wide buffers alive until the call returns
-        let _ = (&remote_w, &password_w, &local_w);
+        let _ = (&remote_w, &username_w, &password_w, &local_w);
         err.0
     }
 
@@ -284,19 +285,20 @@ mod win {
 fn windows_mount(
     port: u16,
     mount_id: &str,
+    username: &str,
     password: &str,
     preferred_letter: Option<&str>,
 ) -> Result<String, String> {
     let remote = win::remote_name(port, mount_id);
     let letter = win::pick_letter(preferred_letter).ok_or("no_free_drive_letter")?;
 
-    let mut err = win::add_connection(&remote, password, Some(&letter));
+    let mut err = win::add_connection(&remote, username, password, Some(&letter));
     if err == 1219 {
         // ERROR_SESSION_CREDENTIAL_CONFLICT: a stale session to the same
         // server exists; force-cancel and retry once with our credentials.
         let root = format!(r"\\127.0.0.1@{}", port);
         let _ = win::cancel(&root);
-        err = win::add_connection(&remote, password, Some(&letter));
+        err = win::add_connection(&remote, username, password, Some(&letter));
     }
     match err {
         0 => Ok(letter),

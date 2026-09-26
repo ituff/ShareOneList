@@ -560,6 +560,8 @@
     "gateway": "WebDAV 网关",
     "gatewayRunning": "运行中，端口 {{port}}",
     "gatewayStopped": "未运行",
+    "envChina": "世纪互联",
+    "envGlobal": "国际版",
     "mounts": "挂载点",
     "noMounts": "还没有挂载点，在下方创建一个。",
     "newMount": "新建挂载",

@@ -560,6 +560,8 @@
     "gateway": "WebDAV gateway",
     "gatewayRunning": "Running on port {{port}}",
     "gatewayStopped": "Not running",
+    "envChina": "21Vianet",
+    "envGlobal": "Global",
     "mounts": "Mount points",
     "noMounts": "No mount points yet. Create one below.",
     "newMount": "New mount",
