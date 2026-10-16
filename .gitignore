@@ -383,7 +383,7 @@ AGENTS.md
 AGENTS.local.md
 .zcodeignore
 
-# Local article assets and store-submission drafts (never public).
+# Local article assets (never public).
 # ScreenShots/ also holds tracked README screenshots - only article assets are ignored.
 /ScreenShots/AskAiChat.png
 /ScreenShots/AskAiHome.png
@@ -391,4 +391,3 @@ AGENTS.local.md
 /ScreenShots/CatalogSitemap.png
 /ScreenShots/LlmProviders.png
 /ScreenShots/公众号二维码.png
-/docs/
