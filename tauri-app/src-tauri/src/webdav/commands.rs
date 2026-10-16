@@ -10,7 +10,7 @@ use crate::auth::cloud_config::CloudEnvironment;
 use crate::auth::AuthModule;
 use crate::errors::AppError;
 use crate::webdav::fs::GraphDavFs;
-use crate::webdav::mounts::MountEntry;
+use crate::webdav::mounts::{validate_mount_id, MountEntry};
 use crate::webdav::{
     generate_mount_id, platform, WebDavManager, WebDavStatus,
 };
@@ -50,10 +50,25 @@ pub async fn webdav_create_mount(
     root_path: String,
     label: String,
     drive_letter: Option<String>,
+    // Custom URL path segment; absent/empty = random 12-hex id.
+    mount_id: Option<String>,
     manager: State<'_, WebDavManager>,
     auth_module: State<'_, Mutex<AuthModule>>,
 ) -> Result<MountEntry, AppError> {
     let env = parse_env(&cloud_env)?;
+
+    // Empty / absent → random id; a custom id must be a URL-safe path
+    // segment (uniqueness is enforced by the manager against all mounts).
+    let mount_id = match mount_id.as_deref().map(str::trim) {
+        Some(id) if !id.is_empty() => {
+            validate_mount_id(id).map_err(|_| AppError::Validation {
+                message: "invalid_mount_id".to_string(),
+                field: "mountId".to_string(),
+            })?;
+            id.to_string()
+        }
+        _ => generate_mount_id(),
+    };
 
     // Fail early when the account has no live session (mounts are useless
     // without one, and the error must surface as an auth re-login prompt).
@@ -89,7 +104,7 @@ pub async fn webdav_create_mount(
     }
 
     let entry = MountEntry {
-        mount_id: generate_mount_id(),
+        mount_id,
         cloud_env: env,
         home_account_id,
         drive_id,
@@ -110,6 +125,20 @@ pub async fn webdav_delete_mount(
     manager: State<'_, WebDavManager>,
 ) -> Result<(), AppError> {
     manager.delete_mount(&mount_id).await.map_err(config_err)
+}
+
+/// Change a mount's URL path segment (`/m/{id}`). Existing OS mappings keep
+/// pointing at the old URL and must be unmounted + re-mounted afterwards.
+#[tauri::command]
+pub async fn webdav_rename_mount(
+    mount_id: String,
+    new_mount_id: String,
+    manager: State<'_, WebDavManager>,
+) -> Result<MountEntry, AppError> {
+    manager
+        .rename_mount(&mount_id, &new_mount_id)
+        .await
+        .map_err(config_err)
 }
 
 /// Map the mount in the OS (drive letter on Windows, Finder volume on macOS).

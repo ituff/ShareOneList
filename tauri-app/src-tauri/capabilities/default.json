@@ -13,6 +13,8 @@
     "core:window:allow-outer-position",
     "core:window:allow-is-maximized",
     "core:window:allow-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-destroy",
     "core:window:allow-scale-factor",
     "core:window:allow-current-monitor",
     "core:window:allow-available-monitors",

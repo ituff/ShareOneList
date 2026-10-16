@@ -71,6 +71,29 @@ pub fn generate_password() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+/// Longest accepted mount id (random ids are 12 hex chars).
+pub const MOUNT_ID_MAX_LEN: usize = 32;
+
+/// A mount id is a URL path segment (`/m/{id}`): 1..=32 chars from
+/// ASCII letters, digits, `-` and `_`. Percent-encoded segments (spaces,
+/// CJK, ...) are rejected outright — the Windows WebDAV redirector
+/// mishandles encoded paths.
+pub fn validate_mount_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("empty");
+    }
+    if id.len() > MOUNT_ID_MAX_LEN {
+        return Err("too_long");
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("invalid_chars");
+    }
+    Ok(())
+}
+
 /// Loads and saves `webdav-mounts.json` with the same tolerate-corruption
 /// policy as the rest of the config layer: a missing or invalid file falls
 /// back to a fresh default (which regenerates the gateway password).
@@ -158,5 +181,26 @@ mod tests {
         let b = generate_password();
         assert_ne!(a, b);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn mount_id_validation_accepts_url_safe_names() {
+        assert!(validate_mount_id("abc123").is_ok());
+        assert!(validate_mount_id("My-Drive_01").is_ok());
+        assert!(validate_mount_id(&"a".repeat(MOUNT_ID_MAX_LEN)).is_ok());
+        // Same shape as the random 12-hex-char ids the manager generates.
+        assert!(validate_mount_id("0a1b2c3d4e5f").is_ok());
+    }
+
+    #[test]
+    fn mount_id_validation_rejects_unsafe_names() {
+        assert!(validate_mount_id("").is_err());
+        assert!(validate_mount_id(&"a".repeat(MOUNT_ID_MAX_LEN + 1)).is_err());
+        // CJK, spaces and path/host syntax must all fail.
+        assert!(validate_mount_id("文档库").is_err());
+        assert!(validate_mount_id("my drive").is_err());
+        assert!(validate_mount_id("a/b").is_err());
+        assert!(validate_mount_id("..").is_err());
+        assert!(validate_mount_id("a:b").is_err());
     }
 }

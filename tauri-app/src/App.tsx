@@ -5,11 +5,14 @@ import { ToastContainer } from "./components/ui/Toast";
 import { ReloginDialog } from "./components/accounts/ReloginDialog";
 import { NotificationBell } from "./components/layout/NotificationBell";
 import { UpdateBubble } from "./components/layout/UpdateBubble";
+import { UpdateDownloadIndicator } from "./components/layout/UpdateDownloadIndicator";
+import { CloseGuardDialog } from "./components/layout/CloseGuardDialog";
 import { useWindowState } from "./hooks/useWindowState";
 import { useTheme } from "./hooks/useTheme";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useAuthStore } from "./stores/authStore";
 import { initTaskListener, useTaskStore } from "./stores/taskStore";
+import { initUpdateProgressListener } from "./stores/updateStore";
 import { syncLanguageFromStore } from "./i18n";
 
 function App() {
@@ -40,6 +43,11 @@ function App() {
     initTaskListener();
   }, []);
 
+  // Initialize Tauri event listener for update download progress
+  useEffect(() => {
+    initUpdateProgressListener();
+  }, []);
+
   // Restore paused/interrupted download batches after app restart
   useEffect(() => {
     loadDownloadTasks();
@@ -68,7 +76,9 @@ function App() {
       </div>
       <ToastContainer />
       <ReloginDialog />
+      <CloseGuardDialog />
       <UpdateBubble />
+      <UpdateDownloadIndicator />
     </Suspense>
   );
 }

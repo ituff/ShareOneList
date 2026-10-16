@@ -932,6 +932,8 @@ export function webdavCreateMount(params: {
   rootPath: string;
   label: string;
   driveLetter?: string | null;
+  /** Custom URL path segment; omitted/empty = auto-generated. */
+  mountId?: string | null;
 }): Promise<WebDavMountEntry> {
   return invoke<WebDavMountEntry>("webdav_create_mount", {
     cloudEnv: params.cloudEnv,
@@ -940,6 +942,18 @@ export function webdavCreateMount(params: {
     rootPath: params.rootPath ?? "",
     label: params.label,
     driveLetter: params.driveLetter ?? null,
+    mountId: params.mountId?.trim() || null,
+  });
+}
+
+/** Rename a mount's URL path segment (/m/{id}); re-mount afterwards. */
+export function webdavRenameMount(
+  mountId: string,
+  newMountId: string
+): Promise<WebDavMountEntry> {
+  return invoke<WebDavMountEntry>("webdav_rename_mount", {
+    mountId,
+    newMountId: newMountId.trim(),
   });
 }
 

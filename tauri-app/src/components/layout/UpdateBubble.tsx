@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Sparkles, X } from "lucide-react";
 import { checkUpdate, performUpdate } from "../../lib/tauri";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -10,8 +9,10 @@ import { formatFileSize } from "../../lib/formatters";
 
 /**
  * Silent startup update check with a dismissible bubble at the top-right.
- * "Update now" downloads the installer (China mirror fallback, progress
- * reported by the backend) and opens it when done.
+ * "Update now" downloads the installer (China mirror fallback, progress and
+ * speed reported by the backend into the shared update store) and opens it
+ * when done. Dismissing during a download hands visibility over to the
+ * background indicator pill.
  */
 export function UpdateBubble() {
   const { t } = useTranslation();
@@ -21,11 +22,11 @@ export function UpdateBubble() {
     downloading,
     transferred,
     total,
+    speed,
     error,
     setInfo,
     dismiss,
     setDownloading,
-    setProgress,
     setError,
   } = useUpdateStore();
   const pushNotification = useNotificationStore((s) => s.push);
@@ -55,25 +56,8 @@ export function UpdateBubble() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for backend download progress.
-  useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
-    listen<{ transferred: number; total: number }>(
-      "update-download-progress",
-      (event) => {
-        setProgress(event.payload.transferred, event.payload.total);
-      }
-    ).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleUpdateNow = useCallback(async () => {
-    if (!info || downloading) return;
+    if (!info || useUpdateStore.getState().downloading) return;
     setDownloading(true);
     try {
       await performUpdate(info.version, channel);
@@ -92,7 +76,7 @@ export function UpdateBubble() {
         detail: message,
       });
     }
-  }, [info, downloading, setDownloading, setError, pushNotification, t]);
+  }, [info, setDownloading, setError, pushNotification, t, channel]);
 
   if (!info || dismissed) return null;
 
@@ -111,7 +95,7 @@ export function UpdateBubble() {
           onClick={dismiss}
           className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           aria-label={t("update.later")}
-          title={t("update.later")}
+          title={downloading ? t("update.backgroundTitle") : t("update.later")}
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -131,12 +115,18 @@ export function UpdateBubble() {
               style={{ width: `${percent}%` }}
             />
           </div>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {t("update.downloading")}
-            {total > 0
-              ? ` ${formatFileSize(transferred)} / ${formatFileSize(total)}`
-              : ""}
-          </p>
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="min-w-0 truncate">
+              {total > 0
+                ? `${formatFileSize(transferred)} / ${formatFileSize(total)} · ${percent}%`
+                : formatFileSize(transferred)}
+            </span>
+            {speed > 0 && (
+              <span className="shrink-0 tabular-nums">
+                {t("update.speed", { value: formatFileSize(speed) })}
+              </span>
+            )}
+          </div>
         </div>
       ) : (
         <div className="mt-3 flex items-center justify-end gap-2">

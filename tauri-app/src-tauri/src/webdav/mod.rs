@@ -18,7 +18,9 @@ use std::sync::{Arc, RwLock};
 use dav_server::DavHandler;
 
 use crate::webdav::fs::GraphDavFs;
-use crate::webdav::mounts::{MountConfig, MountEntry, MountStore, GATEWAY_USERNAME};
+use crate::webdav::mounts::{
+    validate_mount_id, MountConfig, MountEntry, MountStore, GATEWAY_USERNAME,
+};
 use crate::webdav::server::{MountMap, MountRuntime, ServerShared};
 
 /// Sharable handle around [`WebDavManagerInner`]; managed as Tauri state and
@@ -167,6 +169,15 @@ impl WebDavManager {
 
     pub async fn create_mount(&self, entry: MountEntry) -> Result<MountEntry, String> {
         let mut state = self.inner.state.write().await;
+        validate_mount_id(&entry.mount_id).map_err(|_| "invalid_mount_id".to_string())?;
+        if state
+            .config
+            .mounts
+            .iter()
+            .any(|m| m.mount_id == entry.mount_id)
+        {
+            return Err("duplicate_mount_id".to_string());
+        }
         if state
             .config
             .mounts
@@ -204,6 +215,46 @@ impl WebDavManager {
             .remove(mount_id);
         self.inner.store.save(&state.config)?;
         Ok(())
+    }
+
+    /// Change a mount's URL path segment (`/m/{id}`). The gateway routes by
+    /// exact id match, so OS mappings made against the old URL keep pointing
+    /// there and must be unmounted + re-mounted after a rename.
+    pub async fn rename_mount(&self, mount_id: &str, new_id: &str) -> Result<MountEntry, String> {
+        let new_id = new_id.trim();
+        validate_mount_id(new_id).map_err(|_| "invalid_mount_id".to_string())?;
+        let mut state = self.inner.state.write().await;
+        let Some(entry) = state
+            .config
+            .mounts
+            .iter()
+            .find(|m| m.mount_id == mount_id)
+            .cloned()
+        else {
+            return Err("mount_not_found".to_string());
+        };
+        if new_id == entry.mount_id {
+            return Ok(entry);
+        }
+        if state.config.mounts.iter().any(|m| m.mount_id == new_id) {
+            return Err("duplicate_mount_id".to_string());
+        }
+        let mut updated = entry.clone();
+        updated.mount_id = new_id.to_string();
+        {
+            let mut map = state.mounts.write().expect("mount map poisoned");
+            map.remove(&entry.mount_id);
+            map.insert(new_id.to_string(), self.build_runtime(&updated));
+        }
+        let stored = state
+            .config
+            .mounts
+            .iter_mut()
+            .find(|m| m.mount_id == mount_id)
+            .expect("entry found above under the same write lock");
+        *stored = updated.clone();
+        self.inner.store.save(&state.config)?;
+        Ok(updated)
     }
 
     pub async fn set_drive_letter(&self, mount_id: &str, letter: Option<String>) -> Result<(), String> {

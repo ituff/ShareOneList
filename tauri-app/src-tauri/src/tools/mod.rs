@@ -5,7 +5,7 @@ pub mod updater;
 pub mod url_parser;
 
 pub mod commands {
-    use super::updater::{CHANNEL_BETA, CHANNEL_STABLE};
+    use super::updater::CHANNEL_STABLE;
     use crate::errors::AppError;
     use crate::models::{ExternalDownloaderConfig, UpdateInfo};
 

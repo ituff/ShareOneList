@@ -194,6 +194,7 @@ pub fn run() {
             webdav::commands::webdav_status,
             webdav::commands::webdav_create_mount,
             webdav::commands::webdav_delete_mount,
+            webdav::commands::webdav_rename_mount,
             webdav::commands::webdav_mount,
             webdav::commands::webdav_unmount,
             webdav::commands::webdav_diagnose,

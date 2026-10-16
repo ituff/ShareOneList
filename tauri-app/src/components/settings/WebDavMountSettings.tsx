@@ -6,6 +6,7 @@ import {
   Copy,
   FolderInput,
   HardDrive,
+  Pencil,
   Plus,
   RefreshCw,
   Stethoscope,
@@ -21,6 +22,7 @@ import {
   webdavDeleteMount,
   webdavDiagnose,
   webdavMount,
+  webdavRenameMount,
   webdavStatus,
   webdavUnmount,
 } from "../../lib/tauri";
@@ -32,6 +34,7 @@ import type {
   WebDavMountStatus,
   WebDavStatus,
 } from "../../lib/types";
+import { MAX_MOUNT_ID_LENGTH, validateMountId } from "../../lib/validators";
 import { useAuthStore } from "../../stores/authStore";
 import { useToastStore } from "../../stores/toastStore";
 
@@ -163,6 +166,8 @@ function MountListSection({
 }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const run = async (action: () => Promise<unknown>, doneMsg?: string) => {
     setBusy(true);
@@ -175,6 +180,20 @@ function MountListSection({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleRename = async (mountId: string) => {
+    const newId = renameValue.trim();
+    if (newId === mountId) {
+      setRenamingId(null);
+      return;
+    }
+    if (!validateMountId(newId).valid) {
+      addToast("error", t("webdavMount.errInvalidMountId"));
+      return;
+    }
+    await run(() => webdavRenameMount(mountId, newId), t("webdavMount.renamed"));
+    setRenamingId(null);
   };
 
   const handleCopyInfo = async (mountId: string) => {
@@ -224,7 +243,45 @@ function MountListSection({
                 {m.mounted ? t("webdavMount.mounted") : t("webdavMount.notMounted")}
               </span>
             </div>
-            <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{m.url}</div>
+            {renamingId === m.mountId ? (
+              <div className="mt-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    maxLength={MAX_MOUNT_ID_LENGTH}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleRename(m.mountId);
+                      if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    className="w-48 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground"
+                  />
+                  <button
+                    disabled={busy}
+                    onClick={() => void handleRename(m.mountId)}
+                    className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {t("webdavMount.renameConfirm")}
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setRenamingId(null)}
+                    className="rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-accent disabled:opacity-50"
+                  >
+                    {t("webdavMount.cancel")}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("webdavMount.pathNameHint")}
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {t("webdavMount.renameHint")}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-1 truncate font-mono text-xs text-muted-foreground">{m.url}</div>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
               {m.mounted ? (
                 <button
@@ -251,6 +308,17 @@ function MountListSection({
               >
                 <Copy size={13} />
                 {t("webdavMount.copyInfo")}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setRenameValue(m.mountId);
+                  setRenamingId(m.mountId);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-accent disabled:opacity-50"
+              >
+                <Pencil size={13} />
+                {t("webdavMount.rename")}
               </button>
               <button
                 disabled={busy}
@@ -322,6 +390,7 @@ function CreateWizard({
   const [drives, setDrives] = useState<Drive[]>([]);
   const [driveId, setDriveId] = useState("");
   const [rootPath, setRootPath] = useState("");
+  const [pathName, setPathName] = useState("");
   const [letter, setLetter] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -369,6 +438,11 @@ function CreateWizard({
       addToast("error", t("webdavMount.errNoDrive"));
       return;
     }
+    const customPath = pathName.trim();
+    if (customPath && !validateMountId(customPath).valid) {
+      addToast("error", t("webdavMount.errInvalidMountId"));
+      return;
+    }
     setCreating(true);
     try {
       await webdavCreateMount({
@@ -378,6 +452,7 @@ function CreateWizard({
         rootPath: rootPath.trim(),
         label: defaultLabel || t("webdavMount.untitled"),
         driveLetter: isWindows && /^[A-Za-z]$/.test(letter.trim()) ? letter.trim().toUpperCase() : null,
+        mountId: customPath || null,
       });
       addToast("success", t("webdavMount.created"));
       onDone();
@@ -467,6 +542,18 @@ function CreateWizard({
             placeholder="/Documents/Projects"
             className={`${selectCls} w-full font-mono`}
           />
+        </label>
+
+        <label className="space-y-1 text-sm text-muted-foreground">
+          {t("webdavMount.pathName")}
+          <input
+            value={pathName}
+            onChange={(e) => setPathName(e.target.value)}
+            placeholder={t("webdavMount.pathNamePlaceholder")}
+            maxLength={MAX_MOUNT_ID_LENGTH}
+            className={`${selectCls} w-full font-mono`}
+          />
+          <span className="block text-xs">{t("webdavMount.pathNameHint")}</span>
         </label>
 
         {isWindows && (
@@ -576,6 +663,8 @@ function DiagnosisSection({ diag, onChanged }: { diag: WebDavDiagnosis; onChange
 function mountErrorText(t: (key: string) => string, raw: string): string {
   const sentinels: Record<string, string> = {
     duplicate_mount: "webdavMount.errDuplicate",
+    duplicate_mount_id: "webdavMount.errDuplicateMountId",
+    invalid_mount_id: "webdavMount.errInvalidMountId",
     mount_not_found: "webdavMount.errNotFound",
     server_not_running: "webdavMount.errServerDown",
     no_free_drive_letter: "webdavMount.errNoLetter",

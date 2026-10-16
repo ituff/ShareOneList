@@ -1,5 +1,6 @@
+use std::collections::VecDeque;
 use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::errors::AppError;
 use crate::models::UpdateInfo;
@@ -27,11 +28,37 @@ const DOWNLOAD_SOURCE_PREFIXES: &[&str] = &[
 ];
 
 /// Progress event emitted while the update installer downloads.
+/// `speed` is a rolling-window estimate in bytes per second (0 while unknown).
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateDownloadProgress {
     transferred: u64,
     total: u64,
+    speed: u64,
+}
+
+/// Emit progress after this many new bytes, or after this much time —
+/// whichever comes first — so slow links still update about twice a second.
+const PROGRESS_STEP: u64 = 512 * 1024;
+const PROGRESS_INTERVAL_MS: u64 = 500;
+/// Window over which the download speed estimate is averaged.
+const SPEED_WINDOW_MS: u64 = 3000;
+
+/// Rolling-window throughput over (millis, transferred-bytes) samples. Keeps
+/// the speed readout stable despite irregular chunk arrival; returns 0 while
+/// there is too little data or time to estimate (or the transfer is stalled).
+fn window_speed(samples: &mut VecDeque<(u64, u64)>, now_ms: u64, transferred: u64) -> u64 {
+    samples.push_back((now_ms, transferred));
+    // Always keep the newest sample plus one inside the window as baseline.
+    while samples.len() > 2 && now_ms - samples.front().expect("just pushed").0 > SPEED_WINDOW_MS {
+        samples.pop_front();
+    }
+    let &(start_ms, start_bytes) = samples.front().expect("non-empty");
+    let elapsed_ms = now_ms.saturating_sub(start_ms);
+    if elapsed_ms < 250 || transferred <= start_bytes {
+        return 0;
+    }
+    (((transferred - start_bytes) as f64) / (elapsed_ms as f64 / 1000.0)) as u64
 }
 
 #[derive(Deserialize)]
@@ -365,7 +392,9 @@ pub async fn perform_update(
 
     let mut transferred: u64 = 0;
     let mut last_emitted: u64 = 0;
-    const PROGRESS_STEP: u64 = 512 * 1024;
+    let mut last_emit_ms: u64 = 0;
+    let mut samples: VecDeque<(u64, u64)> = VecDeque::new();
+    let start = Instant::now();
 
     while let Some(chunk) = response
         .chunk()
@@ -380,27 +409,37 @@ pub async fn perform_update(
             path: file_path.display().to_string(),
         })?;
         transferred += chunk.len() as u64;
-        if transferred - last_emitted >= PROGRESS_STEP {
+
+        let now_ms = start.elapsed().as_millis() as u64;
+        if transferred - last_emitted >= PROGRESS_STEP
+            || (transferred > last_emitted && now_ms - last_emit_ms >= PROGRESS_INTERVAL_MS)
+        {
+            let speed = window_speed(&mut samples, now_ms, transferred);
             last_emitted = transferred;
+            last_emit_ms = now_ms;
             let _ = app_handle.emit(
                 "update-download-progress",
                 UpdateDownloadProgress {
                     transferred,
                     total,
+                    speed,
                 },
             );
         }
     }
-    file.flush().ok();
-    drop(file);
 
+    let now_ms = start.elapsed().as_millis() as u64;
+    let speed = window_speed(&mut samples, now_ms, transferred);
     let _ = app_handle.emit(
         "update-download-progress",
         UpdateDownloadProgress {
             transferred,
             total,
+            speed,
         },
     );
+    file.flush().ok();
+    drop(file);
 
     // Open the downloaded file (runs installer / opens archive)
     open::that(&file_path).map_err(|e| AppError::FileSystem {
@@ -467,5 +506,22 @@ mod tests {
         assert!(!is_newer("2.2.0", "2.2.0-beta.1"));
         // …but the next stable is.
         assert!(is_newer("2.2.1", "2.2.0-beta.2"));
+    }
+
+    #[test]
+    fn test_window_speed() {
+        let mut samples = VecDeque::new();
+        // Too little time to estimate: 0.
+        assert_eq!(window_speed(&mut samples, 0, 0), 0);
+        assert_eq!(window_speed(&mut samples, 100, 4096), 0);
+        // ~1.5s over which 20480 bytes arrived → ~13653 B/s.
+        let speed = window_speed(&mut samples, 1500, 20480);
+        assert!(speed > 13000 && speed < 14000, "speed was {}", speed);
+        // Samples older than the window are pruned, so the estimate tracks
+        // the recent (slower) rate: 10240 bytes over the last 4.5s → ~2275.
+        let speed = window_speed(&mut samples, 6000, 30720);
+        assert!(speed > 2200 && speed < 2400, "speed was {}", speed);
+        // Stalled transfer (no new bytes) reads as 0.
+        assert_eq!(window_speed(&mut samples, 7000, 30720), 0);
     }
 }

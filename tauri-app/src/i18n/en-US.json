@@ -279,8 +279,8 @@
     "reloginRequired": "Session expired. Please sign in again to load Teams recordings."
   },
   "dialogs": {
-    "confirm": "Confirm",
     "cancel": "Cancel",
+    "confirm": "Confirm",
     "create": "Create",
     "save": "Save",
     "close": "Close",
@@ -416,7 +416,9 @@
     "bubbleTitle": "New version {{version}} available",
     "updateNow": "Update now",
     "later": "Later",
-    "installerReady": "Update downloaded. The installer has been opened — please finish the installation and restart the app."
+    "installerReady": "Update downloaded. The installer has been opened — please finish the installation and restart the app.",
+    "speed": "{{value}}/s",
+    "backgroundTitle": "Update is downloading in the background — click to view progress"
   },
   "notifications": {
     "title": "Notifications",
@@ -553,6 +555,13 @@
     "autoSetDone": "Auto backup enabled — a backup of the current config was written",
     "autoCleared": "Auto backup disabled"
   },
+  "closeGuard": {
+    "title": "Mounted drives are in use",
+    "message": "Quitting ShareOneList disconnects your mounted drives. Keep the app running in the background (minimized to the taskbar) to keep them available, or unmount everything first.",
+    "minimize": "Minimize to taskbar (recommended)",
+    "unmountAndExit": "Unmount and quit",
+    "unmounting": "Disconnecting mounts…"
+  },
   "webdavMount": {
     "title": "Cloud Drive Mounting",
     "description": "Mount OneDrive / SharePoint libraries as Windows drive letters or macOS Finder volumes via a local WebDAV gateway. No driver required; mounts are online views and go offline when the app quits.",
@@ -593,6 +602,13 @@
     "copied": "URL and credentials copied",
     "copyUser": "Username",
     "copyPass": "Password",
+    "pathName": "URL path name (optional)",
+    "pathNamePlaceholder": "Auto-generated",
+    "pathNameHint": "Used in the gateway URL — letters, digits, - and _ only.",
+    "rename": "Rename",
+    "renameConfirm": "Save",
+    "renamed": "URL path name updated",
+    "renameHint": "Existing drive mappings point to the old URL — unmount and re-mount after renaming.",
     "diagnosis": "Windows WebDAV diagnosis",
     "diagOk": "All good",
     "diagIssues": "{{count}} issue(s) found",
@@ -614,6 +630,8 @@
       "platform_not_supported": "This platform is not supported."
     },
     "errDuplicate": "This location is already mounted",
+    "errDuplicateMountId": "This path name is already in use",
+    "errInvalidMountId": "Use 1–32 characters: letters, digits, - or _",
     "errNotFound": "Mount point not found",
     "errServerDown": "Gateway is not running — restart the app",
     "errNoLetter": "No free drive letter available",
