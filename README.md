@@ -112,6 +112,15 @@ If the command reports insufficient permissions, use `sudo xattr -cr /Applicatio
 | **Settings** | **Dark mode** |
 | ![](./ScreenShots/SettingsPage.png) | ![](./ScreenShots/DarkMode.png) |
 
+## 🏢 For IT administrators
+
+Rolling ShareOneList out across your organization? The wiki has per-cloud **admin deployment guides** covering tenant-wide admin consent (one URL), handling restricted user-consent policies, and the network endpoint whitelist:
+
+- [Global cloud](https://github.com/ituff/ShareOneList/wiki/Admin-Deployment-Guide-Global) · [中文版](https://github.com/ituff/ShareOneList/wiki/管理员部署指南-国际版)
+- [Microsoft 365 operated by 21Vianet](https://github.com/ituff/ShareOneList/wiki/Admin-Deployment-Guide-21Vianet) · [中文版](https://github.com/ituff/ShareOneList/wiki/管理员部署指南-世纪互联版)
+
+The app only uses delegated Microsoft Graph permissions and acts strictly as the signed-in user — no application permissions, no background access. Tokens stay in the local OS credential store.
+
 ## ⚙️ Advanced configuration
 
 The app ships with default Azure AD client IDs for both Global and 21Vianet — no setup needed. To use your own Azure AD applications, register them at [portal.azure.com](https://portal.azure.com) (Global) and [portal.azure.cn](https://portal.azure.cn) (21Vianet) separately and configure the client IDs in the app.

@@ -112,6 +112,15 @@ open /Applications/ShareOneList.app
 | **设置** | **深色模式** |
 | ![](./ScreenShots/SettingsPage.png) | ![](./ScreenShots/DarkMode.png) |
 
+## 🏢 企业管理员
+
+在企业内批量部署 ShareOneList？Wiki 提供分云的**管理员部署指南**，覆盖租户级管理员同意（一条 URL 完成）、用户同意策略受限的处理、网络端点白名单：
+
+- [国际版](https://github.com/ituff/ShareOneList/wiki/管理员部署指南-国际版) · [English](https://github.com/ituff/ShareOneList/wiki/Admin-Deployment-Guide-Global)
+- [世纪互联版](https://github.com/ituff/ShareOneList/wiki/管理员部署指南-世纪互联版) · [English](https://github.com/ituff/ShareOneList/wiki/Admin-Deployment-Guide-21Vianet)
+
+应用仅使用 Microsoft Graph 委托权限，严格以登录用户身份操作——不申请应用权限、无后台独立访问；令牌只保存在本机系统凭据库。
+
 ## ⚙️ 高级配置
 
 应用内置国际版和世纪互联版的 Azure AD 客户端 ID，开箱即用。如需使用自己的 Azure AD 应用，请在 [portal.azure.com](https://portal.azure.com)（国际版）和 [portal.azure.cn](https://portal.azure.cn)（世纪互联版）分别注册，并在应用内配置。
