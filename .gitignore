@@ -381,3 +381,14 @@ FodyWeavers.xsd
 .vscode/
 AGENTS.md
 AGENTS.local.md
+.zcodeignore
+
+# Local article assets and store-submission drafts (never public).
+# ScreenShots/ also holds tracked README screenshots - only article assets are ignored.
+/ScreenShots/AskAiChat.png
+/ScreenShots/AskAiHome.png
+/ScreenShots/BackupSettings.png
+/ScreenShots/CatalogSitemap.png
+/ScreenShots/LlmProviders.png
+/ScreenShots/公众号二维码.png
+/docs/
