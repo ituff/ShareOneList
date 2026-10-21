@@ -90,6 +90,20 @@ pub struct TranscriptExport {
     pub source_name: String,
 }
 
+/// A meeting transcript converted to the plain-text script
+/// (`[hh:mm:ss] Speaker: text` lines), returned in memory instead of written
+/// to a file (used by the meeting-minutes pipeline).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptScript {
+    /// The full script text, one utterance per line.
+    pub script: String,
+    /// Number of timestamped script lines.
+    pub entry_count: u32,
+    /// Name of the source (drive file or "player-capture").
+    pub source_name: String,
+}
+
 /// Transfer progress emitted via Tauri events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

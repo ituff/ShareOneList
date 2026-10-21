@@ -404,7 +404,19 @@
     "streamNotice": "该视频没有下载权限，将使用流式下载保存。",
     "streamKeepOpen": "下载进行中，请保持本预览页打开，不要关闭标签页。",
     "previous": "上一个文件",
-    "next": "下一个文件"
+    "next": "下一个文件",
+    "minutesButton": "AI 会议纪要",
+    "minutesTitle": "会议纪要",
+    "minutesCollecting": "正在获取会议脚本...",
+    "minutesGenerating": "正在生成会议纪要...",
+    "minutesWaiting": "等待模型响应...",
+    "minutesRetry": "重试",
+    "minutesFailed": "会议纪要生成失败",
+    "minutesEmpty": "模型未返回会议纪要内容。",
+    "minutesNoDefaultModel": "尚未设置默认 LLM 模型——请先在 设置 → 模型供应商 中添加供应商并选择默认模型。",
+    "minutesDownload": "下载 Word 文档",
+    "minutesSaved": "会议纪要已保存",
+    "minutesFileSuffix": "会议纪要"
   },
   "update": {
     "available": "有可用更新",

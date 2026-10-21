@@ -22,6 +22,7 @@ import type {
   ShareOptions,
   Site,
   TranscriptExport,
+  TranscriptScript,
   UpdateInfo,
 } from "./types";
 
@@ -319,6 +320,51 @@ export function exportTranscriptText(
     savePath,
     transcriptText,
   });
+}
+
+/**
+ * Fetch a meeting recording's transcript as an in-memory script (no file
+ * written) — the input for the AI meeting-minutes pipeline. Same discovery
+ * rules as exportRecordingTranscript; resolves null when there is no
+ * transcript.
+ */
+export function fetchRecordingTranscriptText(
+  cloudEnv: CloudEnvironment,
+  driveId: string,
+  itemId: string,
+  homeAccountId: string
+): Promise<TranscriptScript | null> {
+  return invoke<TranscriptScript | null>("fetch_recording_transcript_text", {
+    cloudEnv,
+    driveId,
+    itemId,
+    homeAccountId,
+  });
+}
+
+/**
+ * Convert a transcript payload captured in-page (VTT or Teams transcript
+ * JSON) into the plain-text script in memory. Resolves null when nothing
+ * usable remains.
+ */
+export function convertTranscriptPayload(
+  transcriptText: string
+): Promise<TranscriptScript | null> {
+  return invoke<TranscriptScript | null>("convert_transcript_payload", {
+    transcriptText,
+  });
+}
+
+/**
+ * Export AI-generated meeting minutes as a Word document (.docx).
+ * `title` (usually the recording's base name) becomes the document title.
+ */
+export function exportMeetingMinutesDocx(
+  savePath: string,
+  title: string,
+  markdown: string
+): Promise<void> {
+  return invoke<void>("export_meeting_minutes_docx", { savePath, title, markdown });
 }
 
 /**
@@ -651,6 +697,23 @@ export function llmChat(
 /** Cancel an in-flight chat request; unknown ids are ignored. */
 export function cancelLlmChat(requestId: string): Promise<void> {
   return invoke<void>("llm_chat_cancel", { requestId });
+}
+
+/**
+ * Generate meeting minutes from a recording transcript with the default
+ * model. Streams `llm-chat-event` deltas under `requestId` (generate the id
+ * up front so the first delta is not lost); cancellable via cancelLlmChat.
+ */
+export function llmMeetingMinutes(
+  requestId: string,
+  meetingTitle: string,
+  transcriptScript: string
+): Promise<LlmChatStart> {
+  return invoke<LlmChatStart>("llm_meeting_minutes", {
+    requestId,
+    meetingTitle,
+    transcriptScript,
+  });
 }
 
 /**

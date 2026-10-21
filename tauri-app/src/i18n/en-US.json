@@ -404,7 +404,19 @@
     "streamNotice": "This video has no download permission — saving via stream capture.",
     "streamKeepOpen": "Keep this preview tab open while downloading.",
     "previous": "Previous file",
-    "next": "Next file"
+    "next": "Next file",
+    "minutesButton": "AI meeting minutes",
+    "minutesTitle": "Meeting Minutes",
+    "minutesCollecting": "Fetching meeting transcript...",
+    "minutesGenerating": "Generating meeting minutes...",
+    "minutesWaiting": "Waiting for the model to respond...",
+    "minutesRetry": "Try again",
+    "minutesFailed": "Failed to generate meeting minutes",
+    "minutesEmpty": "The model returned no meeting minutes.",
+    "minutesNoDefaultModel": "No default LLM model is set — add a provider and pick a default model in Settings first.",
+    "minutesDownload": "Download Word document",
+    "minutesSaved": "Meeting minutes saved",
+    "minutesFileSuffix": "minutes"
   },
   "update": {
     "available": "Update Available",

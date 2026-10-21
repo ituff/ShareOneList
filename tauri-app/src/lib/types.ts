@@ -72,6 +72,17 @@ export interface TranscriptExport {
   sourceName: string;
 }
 
+/** A meeting transcript converted to the plain-text script, held in memory
+ * (input for the AI meeting-minutes pipeline). */
+export interface TranscriptScript {
+  /** The full script text, one utterance per line. */
+  script: string;
+  /** Number of timestamped script lines. */
+  entryCount: number;
+  /** Name of the source (drive file or "player-capture"). */
+  sourceName: string;
+}
+
 // ─── Navigation & UI State ──────────────────────────────────────────────────
 
 /** A single breadcrumb entry for folder path navigation. */

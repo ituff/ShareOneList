@@ -12,7 +12,7 @@ use crate::errors::AppError;
 use crate::graph::GraphClient;
 use crate::models::{
     Drive, DriveItem, DriveQuota, MeetingRecording, RecordingSource, ShareOptions, Site,
-    TranscriptExport,
+    TranscriptExport, TranscriptScript,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1949,6 +1949,42 @@ async fn find_recording_transcript(
     Ok(best.map(|(_, item)| item))
 }
 
+/// Locate the recording's transcript in its drive folder, download it, and
+/// convert it to the plain-text meeting script. Shared by the file-export and
+/// the in-memory (meeting-minutes) routes. `Ok(None)` means the meeting has
+/// no transcript or nothing usable could be converted.
+async fn load_recording_transcript_script(
+    client: &GraphClient,
+    token: &str,
+    drive_id: &str,
+    item_id: &str,
+) -> Result<Option<TranscriptScript>, AppError> {
+    let Some(transcript) = find_recording_transcript(client, token, drive_id, item_id).await?
+    else {
+        return Ok(None);
+    };
+
+    let bytes = download_item_bytes(client, token, drive_id, &transcript.id).await?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "Transcript file is too large to export".to_string(),
+            field: "item_id".to_string(),
+        });
+    }
+    let vtt = String::from_utf8_lossy(&bytes);
+    let lines = vtt_to_script_lines(&vtt);
+    if lines.is_empty() {
+        return Ok(None);
+    }
+    let mut script = lines.join("\n");
+    script.push('\n');
+    Ok(Some(TranscriptScript {
+        script,
+        entry_count: lines.len() as u32,
+        source_name: transcript.name.clone(),
+    }))
+}
+
 /// Export a meeting recording's transcript as a plain-text script file.
 ///
 /// Finds the `.vtt` transcript stored next to the recording, converts it to
@@ -1972,34 +2008,41 @@ pub async fn export_recording_transcript(
     };
 
     let client = GraphClient::new(env);
-    let Some(transcript) = find_recording_transcript(&client, &token, &drive_id, &item_id).await?
+    let Some(result) = load_recording_transcript_script(&client, &token, &drive_id, &item_id).await?
     else {
         return Ok(None);
     };
-
-    let bytes = download_item_bytes(&client, &token, &drive_id, &transcript.id).await?;
-    if bytes.len() > 10 * 1024 * 1024 {
-        return Err(AppError::Validation {
-            message: "Transcript file is too large to export".to_string(),
-            field: "item_id".to_string(),
-        });
-    }
-    let vtt = String::from_utf8_lossy(&bytes);
-    let lines = vtt_to_script_lines(&vtt);
-    if lines.is_empty() {
-        return Ok(None);
-    }
-    let mut content = lines.join("\n");
-    content.push('\n');
-    std::fs::write(&save_path, content).map_err(|e| AppError::FileSystem {
+    std::fs::write(&save_path, result.script).map_err(|e| AppError::FileSystem {
         message: format!("Failed to write transcript: {}", e),
         path: save_path.clone(),
     })?;
 
     Ok(Some(TranscriptExport {
-        entry_count: lines.len() as u32,
-        source_name: transcript.name.clone(),
+        entry_count: result.entry_count,
+        source_name: result.source_name,
     }))
+}
+
+/// Fetch a meeting recording's transcript as an in-memory script (no file
+/// written) — the input for the AI meeting-minutes pipeline. Same discovery
+/// and conversion rules as `export_recording_transcript`.
+#[tauri::command]
+pub async fn fetch_recording_transcript_text(
+    cloud_env: String,
+    drive_id: String,
+    item_id: String,
+    home_account_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+) -> Result<Option<TranscriptScript>, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+
+    let client = GraphClient::new(env);
+    load_recording_transcript_script(&client, &token, &drive_id, &item_id).await
 }
 
 /// Export a transcript payload already fetched by the in-page capture pipeline
@@ -2012,24 +2055,46 @@ pub async fn export_transcript_text(
     save_path: String,
     transcript_text: String,
 ) -> Result<Option<TranscriptExport>, AppError> {
-    if transcript_text.len() > 10 * 1024 * 1024 {
-        return Err(AppError::Validation {
-            message: "Transcript file is too large to export".to_string(),
-            field: "save_path".to_string(),
-        });
-    }
-    let lines = transcript_to_script_lines(&transcript_text);
-    if lines.is_empty() {
+    let Some(result) = convert_transcript_payload_inner(&transcript_text)? else {
         return Ok(None);
-    }
-    let mut content = lines.join("\n");
-    content.push('\n');
-    std::fs::write(&save_path, content).map_err(|e| AppError::FileSystem {
+    };
+    std::fs::write(&save_path, result.script).map_err(|e| AppError::FileSystem {
         message: format!("Failed to write transcript: {}", e),
         path: save_path.clone(),
     })?;
 
     Ok(Some(TranscriptExport {
+        entry_count: result.entry_count,
+        source_name: result.source_name,
+    }))
+}
+
+/// Convert a captured transcript payload (VTT or Teams transcript JSON) into
+/// the plain-text script in memory — the player-capture input for the AI
+/// meeting-minutes pipeline. `Ok(None)` when nothing usable remains.
+#[tauri::command]
+pub fn convert_transcript_payload(
+    transcript_text: String,
+) -> Result<Option<TranscriptScript>, AppError> {
+    convert_transcript_payload_inner(&transcript_text)
+}
+
+/// Shared conversion for `export_transcript_text` / `convert_transcript_payload`.
+fn convert_transcript_payload_inner(transcript_text: &str) -> Result<Option<TranscriptScript>, AppError> {
+    if transcript_text.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "Transcript file is too large to export".to_string(),
+            field: "transcriptText".to_string(),
+        });
+    }
+    let lines = transcript_to_script_lines(transcript_text);
+    if lines.is_empty() {
+        return Ok(None);
+    }
+    let mut script = lines.join("\n");
+    script.push('\n');
+    Ok(Some(TranscriptScript {
+        script,
         entry_count: lines.len() as u32,
         source_name: "player-capture".to_string(),
     }))

@@ -100,6 +100,35 @@ the file list above is insufficient):\n",
     prompt
 }
 
+/// System prompt for generating meeting minutes from a Teams recording
+/// transcript. Output is structured Markdown (headings, lists) so it can be
+/// rendered in-app and exported to .docx; tables are deliberately avoided.
+pub fn build_meeting_minutes_prompt() -> String {
+    String::from(
+        "You are a professional meeting-minutes writer inside ShareOneList. The user \
+will give you the transcript of a recorded Microsoft Teams meeting as timestamped \
+`[hh:mm:ss] Speaker: text` lines.\n\n\
+Write concise, faithful meeting minutes in Markdown with exactly these sections:\n\
+# 会议纪要 / Meeting Minutes (use the meeting's dominant language)\n\
+1. **Summary** — 2-4 sentences on what the meeting was about and its outcome.\n\
+2. **Key discussion points** — grouped by topic, mentioning who raised what. \
+Skip small talk and repetition.\n\
+3. **Decisions** — every decision made, with who made it.\n\
+4. **Action items** — a bullet list; each item names the owner and the deadline \
+when the transcript mentions one. Omit the ones not stated.\n\
+5. **Open questions** — unresolved issues worth a follow-up.\n\n\
+Rules:\n\
+- Use only what the transcript says. Never invent decisions, owners, or numbers. \
+When the transcript is ambiguous, say so.\n\
+- Write the minutes in the language predominantly spoken in the meeting.\n\
+- Keep speaker names as they appear in the transcript.\n\
+- Reference timestamps sparingly, only where they help the reader jump back \
+(e.g. on decisions).\n\
+- Use Markdown headings (##) and bullet lists; do NOT use tables and do NOT \
+wrap the output in a code fence.\n",
+    )
+}
+
 /// Payload pushed to the frontend for a streaming chat request.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

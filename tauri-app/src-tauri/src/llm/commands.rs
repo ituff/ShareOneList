@@ -353,3 +353,121 @@ pub async fn llm_chat_cancel(
     }
     Ok(())
 }
+
+/// Generate meeting minutes from a Teams recording transcript with the
+/// default model. Like `llm_chat`, the request streams to the frontend as
+/// `llm-chat-event` deltas under `request_id` (client-generated so the very
+/// first delta is not lost) and can be cancelled via `llm_chat_cancel`.
+/// Uses a dedicated minutes-writing system prompt instead of the
+/// cloud-grounding assistant prompt — the transcript is the only source.
+#[tauri::command]
+pub async fn llm_meeting_minutes(
+    request_id: Option<String>,
+    meeting_title: String,
+    transcript_script: String,
+    manager: State<'_, LlmConfigManager>,
+    registry: State<'_, ChatRegistry>,
+    app_handle: tauri::AppHandle,
+) -> Result<LlmChatStart, AppError> {
+    if transcript_script.trim().is_empty() {
+        return Err(AppError::Validation {
+            message: "transcript script must not be empty".into(),
+            field: "transcriptScript".into(),
+        });
+    }
+    if transcript_script.len() > 10 * 1024 * 1024 {
+        return Err(AppError::Validation {
+            message: "transcript script is too large".into(),
+            field: "transcriptScript".into(),
+        });
+    }
+    let config = manager.load();
+    let default_model = config.default_model.as_ref().ok_or(AppError::Validation {
+        message: "default model is not configured".into(),
+        field: "defaultModel".into(),
+    })?;
+    let provider = config
+        .provider(&default_model.provider_id)
+        .cloned()
+        .ok_or(AppError::Validation {
+            message: "default model points to a missing provider".into(),
+            field: "defaultModel".into(),
+        })?;
+    if !provider
+        .models
+        .iter()
+        .any(|m| m.model_id == default_model.model_id)
+    {
+        return Err(AppError::Validation {
+            message: "default model not found on provider".into(),
+            field: "defaultModel".into(),
+        });
+    }
+    let api_key = manager
+        .load_api_key(&default_model.provider_id)
+        .ok_or(AppError::Validation {
+            message: "API key is not configured for this provider".into(),
+            field: "apiKey".into(),
+        })?;
+
+    let request_id = match request_id {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => now_id("req"),
+    };
+    let cancel = CancellationToken::new();
+    registry.lock().await.insert(request_id.clone(), cancel.clone());
+
+    // Promote the selected model to the front so adapters resolve it.
+    let mut provider = provider;
+    if let Some(index) = provider
+        .models
+        .iter()
+        .position(|m| m.model_id == default_model.model_id)
+    {
+        provider.models.swap(0, index);
+    }
+
+    let title = if meeting_title.trim().is_empty() {
+        "(untitled meeting)".to_string()
+    } else {
+        meeting_title.trim().to_string()
+    };
+    let messages = vec![
+        LlmChatMessage {
+            role: "system".into(),
+            content: client::build_meeting_minutes_prompt(),
+        },
+        LlmChatMessage {
+            role: "user".into(),
+            content: format!(
+                "Meeting recording: {}\n\nTranscript:\n{}",
+                title, transcript_script
+            ),
+        },
+    ];
+
+    let spawn_request_id = request_id.clone();
+    tauri::async_runtime::spawn(async move {
+        client::stream_chat(
+            app_handle.clone(),
+            spawn_request_id.clone(),
+            provider,
+            api_key,
+            messages,
+            None,
+            cancel,
+        )
+        .await;
+        use tauri::Manager;
+        app_handle
+            .state::<ChatRegistry>()
+            .lock()
+            .await
+            .remove(&spawn_request_id);
+    });
+
+    Ok(LlmChatStart {
+        request_id,
+        used_memories: Vec::new(),
+    })
+}

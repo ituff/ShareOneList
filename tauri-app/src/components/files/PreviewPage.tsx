@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, Download, ExternalLink, FileText, Loader2, RotateCw, Video } from "lucide-react";
+import {
+  AlertCircle,
+  ClipboardList,
+  Download,
+  ExternalLink,
+  FileText,
+  Loader2,
+  RotateCw,
+  Video,
+} from "lucide-react";
 import { dirname, downloadDir, join } from "@tauri-apps/api/path";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   beginStreamDownload,
+  convertTranscriptPayload,
   downloadFile,
   exportRecordingTranscript,
   exportTranscriptText,
+  fetchRecordingTranscriptText,
   probeDownloadAllowed,
   getPreviewUrl,
   getTextContent,
@@ -16,6 +27,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TabState } from "../../lib/types";
 import { isImageFile, isMarkdownFile, isTextFile, isVideoFile } from "./FilePreview";
+import { MeetingMinutesDialog, type MinutesTranscriptResult } from "./dialogs";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -383,6 +395,68 @@ export function PreviewPage({ tab }: PreviewPageProps) {
     t,
   ]);
 
+  // AI meeting minutes. Reuses the transcript pipeline above (player capture
+  // first, drive .vtt fallback) but keeps the script in memory for the LLM.
+  const [showMinutes, setShowMinutes] = useState(false);
+  const collectMinutesTranscript = useCallback(async (): Promise<MinutesTranscriptResult> => {
+    if (!item) return { kind: "none" };
+
+    // 1) Player capture route (embedded preview only).
+    if (isEmbed && iframeRef.current?.contentWindow) {
+      const fetchResult = transcriptUrlRef.current
+        ? ({ kind: "result", status: "ok", url: transcriptUrlRef.current } as TranscriptReply)
+        : await askPlayerFrame({ type: "SOL_TRANSCRIPT_FETCH" }, 8000);
+      if (fetchResult.kind === "result" && fetchResult.status === "none") {
+        // The player API definitively reports this meeting was never
+        // transcribed.
+        return { kind: "none" };
+      }
+      if (fetchResult.kind === "result" && fetchResult.status === "ok" && fetchResult.url) {
+        const dataReply = await askPlayerFrame(
+          { type: "SOL_TRANSCRIPT_DOWNLOAD", url: fetchResult.url },
+          30000
+        );
+        if (dataReply.kind === "data" && dataReply.text.trim()) {
+          const converted = await convertTranscriptPayload(dataReply.text);
+          if (converted && converted.script.trim()) {
+            return { kind: "ok", script: converted.script };
+          }
+          return { kind: "none" };
+        }
+        if (dataReply.kind === "result" && dataReply.status === "error") {
+          return {
+            kind: "error",
+            message: `${t("preview.transcriptFailed")}: ${dataReply.message ?? ""}`,
+          };
+        }
+        // Timeout/unknown content fetch — fall through to the drive route.
+      }
+      // Otherwise (no context yet / unknown) fall through to the drive route.
+    }
+
+    // 2) Drive route: sibling .vtt next to the recording.
+    const fallback = await fetchRecordingTranscriptText(
+      tab.cloudEnv,
+      tab.driveId,
+      item.id,
+      tab.homeAccountId
+    );
+    if (fallback && fallback.script.trim()) {
+      return { kind: "ok", script: fallback.script };
+    }
+    // When the player embed exists but had no context yet, playback usually
+    // fixes it — nudge instead of dead-ending.
+    return isEmbed ? { kind: "needPlayback" } : { kind: "none" };
+  }, [
+    item,
+    isEmbed,
+    askPlayerFrame,
+    tab.cloudEnv,
+    tab.driveId,
+    tab.homeAccountId,
+    t,
+  ]);
+
   const handleDownload = useCallback(async () => {
     if (!item || isDownloading) return;
     // No download permission (tenant policy rejects /content): the download
@@ -477,6 +551,16 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           >
             <Download className="h-3.5 w-3.5" />
           </button>
+          {tab.fromRecordings && (
+            <button
+              onClick={() => setShowMinutes(true)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              title={t("preview.minutesButton")}
+              aria-label={t("preview.minutesButton")}
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+            </button>
+          )}
           {tab.fromRecordings && (
             <button
               onClick={handleTranscriptDownload}
@@ -614,6 +698,14 @@ export function PreviewPage({ tab }: PreviewPageProps) {
           />
         )}
       </div>
+
+      {showMinutes && tab.fromRecordings && (
+        <MeetingMinutesDialog
+          meetingTitle={item.name.replace(/\.[^.]+$/, "") || "recording"}
+          loadTranscript={collectMinutesTranscript}
+          onClose={() => setShowMinutes(false)}
+        />
+      )}
     </div>
   );
 }
