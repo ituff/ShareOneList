@@ -86,6 +86,16 @@ jobs:
           cache: npm
           cache-dependency-path: tauri-app/package-lock.json
 
+      - name: Bake tagged version into build metadata
+        # Prerelease tags (-beta.N) carry a suffix the repo's version files
+        # don't have; bake it in so the About page and the updater's
+        # CURRENT_VERSION report the real installed version (otherwise the
+        # beta channel keeps re-offering the already-installed beta).
+        if: contains(github.ref_name, '-')
+        shell: bash
+        working-directory: tauri-app
+        run: node ../scripts/bake-release-version.mjs "${GITHUB_REF_NAME#v}"
+
       - name: Install frontend dependencies
         working-directory: tauri-app
         run: npm ci

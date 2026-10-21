@@ -509,6 +509,16 @@ mod tests {
     }
 
     #[test]
+    fn test_is_newer_with_baked_prerelease_current() {
+        // Release CI bakes the tagged version into the build, so a beta
+        // install reports its full prerelease version: the same beta must
+        // not be re-offered, later betas still win.
+        assert!(!is_newer("2.3.0-beta.4", "2.3.0-beta.4"));
+        assert!(is_newer("2.3.0-beta.5", "2.3.0-beta.4"));
+        assert!(is_newer("2.3.1", "2.3.0-beta.4"));
+    }
+
+    #[test]
     fn test_window_speed() {
         let mut samples = VecDeque::new();
         // Too little time to estimate: 0.
