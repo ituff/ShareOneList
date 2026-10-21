@@ -9,6 +9,7 @@ pub mod models;
 pub mod store;
 pub mod tools;
 pub mod transfer;
+pub mod tray;
 pub mod webdav;
 
 use auth::AuthModule;
@@ -33,6 +34,14 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        // Close interception lives in Rust so it also covers the Windows
+        // taskbar "close window" command while the WebView2 is minimized
+        // (see tray.rs).
+        .on_window_event(tray::on_window_event)
         .setup(|app| {
             // The main window is created here instead of in tauri.conf.json so
             // we can attach the stream-capture boot script, which must run in
@@ -98,15 +107,21 @@ pub fn run() {
                 app_data_dir.clone(),
             ));
             // WebDAV gateway: starts the loopback listener in the background
-            // so Explorer/Finder mounts survive app restarts (fixed port).
+            // so Explorer/Finder mounts survive app restarts (fixed port),
+            // then restores the user's working set (mounts flagged auto_mount
+            // that are not currently mapped — e.g. auto-unmounted at quit).
             let webdav_manager = webdav::WebDavManager::new(app.handle().clone(), &app_data_dir);
             let webdav_for_start = webdav_manager.clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = webdav_for_start.start().await {
                     eprintln!("[webdav] gateway failed to start: {}", e);
+                    return;
                 }
+                webdav_for_start.restore_auto_mounts().await;
             });
             app.manage(webdav_manager);
+            // Resident tray icon (open/quit; quit unmounts drives first).
+            tray::build_tray(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,6 +177,8 @@ pub fn run() {
             tools::commands::push_to_downloader,
             tools::commands::check_update,
             tools::commands::perform_update,
+            tray::set_tray_menu_labels,
+            tray::quit_application_command,
             llm::commands::get_llm_config,
             llm::commands::save_llm_provider,
             llm::commands::delete_llm_provider,

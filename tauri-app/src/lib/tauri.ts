@@ -28,6 +28,20 @@ import type {
 
 // ─── Authentication ─────────────────────────────────────────────────────────
 
+/** Tauri event: the backend prevented a close (mounts active) and the
+ * close-guard dialog should show. Decision logic lives in tray.rs. */
+export const CLOSE_GUARD_EVENT = "close-guard-requested";
+
+/** Unmount all mounted drives and exit the app (close-guard / tray quit). */
+export function quitApplication(): Promise<void> {
+  return invoke<void>("quit_application_command");
+}
+
+/** Re-localize the tray menu after the user switches UI language. */
+export function setTrayMenuLabels(openLabel: string, quitLabel: string): Promise<void> {
+  return invoke<void>("set_tray_menu_labels", { openLabel, quitLabel });
+}
+
 /**
  * Initiate OAuth2 login for the specified cloud environment.
  * Opens system browser for authorization and returns account info on success.

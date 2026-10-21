@@ -35,6 +35,12 @@ pub struct MountEntry {
     /// Preferred Windows drive letter (e.g. "Z"); None = auto-pick at mount time.
     #[serde(default)]
     pub drive_letter: Option<String>,
+    /// User's working set: when true, the gateway re-mounts this entry on
+    /// app start. Set by mounting, cleared by an explicit unmount — NOT by
+    /// the quit-time auto-unmount, so "unmount and quit" restores the mount
+    /// on the next launch.
+    #[serde(default)]
+    pub auto_mount: bool,
 }
 
 /// Persisted gateway config: mount list + the gateway Basic-auth password.
@@ -163,6 +169,7 @@ mod tests {
             root_item_id: String::new(),
             label: "站点/文档库".to_string(),
             drive_letter: Some("Z".to_string()),
+            auto_mount: true,
         });
         config.port = 3990;
         store.save(&config).unwrap();
@@ -172,7 +179,24 @@ mod tests {
         assert_eq!(loaded.mounts.len(), 1);
         assert_eq!(loaded.mounts[0].label, "站点/文档库");
         assert_eq!(loaded.mounts[0].drive_letter.as_deref(), Some("Z"));
+        assert!(loaded.mounts[0].auto_mount);
         assert_eq!(loaded.gateway_password, config.gateway_password);
+    }
+
+    // Feature: webdav-mount, Property: auto_mount flag survives the upgrade —
+    // configs written before the field existed load with auto_mount=false
+    #[test]
+    fn legacy_mount_config_loads_with_auto_mount_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(MOUNTS_FILE_NAME),
+            r#"{"mounts":[{"mountId":"abc123","cloudEnv":"china","homeAccountId":"acc","driveId":"drive","rootItemId":"","label":"库","driveLetter":"Z"}],"gatewayPassword":"pw"}"#,
+        )
+        .unwrap();
+        let store = MountStore::new(dir.path());
+        let config = store.load();
+        assert_eq!(config.mounts.len(), 1);
+        assert!(!config.mounts[0].auto_mount);
     }
 
     #[test]

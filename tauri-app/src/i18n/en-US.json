@@ -180,6 +180,12 @@
     "title": "Settings",
     "description": "Configure theme, language, and preferences.",
     "appearance": "Appearance",
+    "general": "General",
+    "tabGeneral": "General",
+    "closeToTray": "Keep in tray when the window is closed",
+    "closeToTrayHint": "Closing the window keeps the app resident in the system tray — mounts and background tasks stay online. Reopen or quit from the tray icon.",
+    "autostart": "Launch at login",
+    "autostartHint": "Start ShareOneList automatically when you sign in.",
     "theme": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -569,10 +575,14 @@
   },
   "closeGuard": {
     "title": "Mounted drives are in use",
-    "message": "Quitting ShareOneList disconnects your mounted drives. Keep the app running in the background (minimized to the taskbar) to keep them available, or unmount everything first.",
-    "minimize": "Minimize to taskbar (recommended)",
+    "message": "A cloud drive mount is active. Staying in the tray keeps it online (recommended), or unmount everything first and quit.",
+    "hideToTray": "Stay in tray (recommended)",
     "unmountAndExit": "Unmount and quit",
     "unmounting": "Disconnecting mounts…"
+  },
+  "tray": {
+    "open": "Open ShareOneList",
+    "quit": "Quit"
   },
   "webdavMount": {
     "title": "Cloud Drive Mounting",

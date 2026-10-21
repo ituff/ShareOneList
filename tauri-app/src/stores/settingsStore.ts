@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 /** Sub-tab within the settings page ("ai" is deep-link target for memory editing). */
-export type SettingsTab = "appearance" | "downloads" | "ai" | "backup" | "mount" | "about";
+export type SettingsTab = "appearance" | "general" | "downloads" | "ai" | "backup" | "mount" | "about";
 /** Update channel: stable releases only, or prereleases included. */
 export type UpdateChannel = "stable" | "beta";
 import type { AppConfig, ThemeMode, WindowState } from "../lib/types";
@@ -22,6 +22,8 @@ interface SettingsState {
   updateChannel: UpdateChannel;
   /** Directory receiving automatic config backups; null disables. */
   autoBackupDir: string | null;
+  /** Closing the main window hides it to the tray instead of exiting. */
+  closeToTray: boolean;
   /** Whether the initial config has been loaded from the backend. */
   isLoaded: boolean;
 
@@ -41,6 +43,8 @@ interface SettingsState {
   setUpdateChannel: (channel: UpdateChannel) => void;
   /** Set the auto backup directory (null disables) and persist. */
   setAutoBackupDir: (dir: string | null) => void;
+  /** Toggle close-to-tray and persist to backend. */
+  setCloseToTray: (value: boolean) => void;
   /** Active sub-tab in the settings page. */
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -56,10 +60,21 @@ const defaultWindow: WindowState = {
 };
 
 /**
- * Persist the current config to the backend.
- * Fire-and-forget for UI responsiveness — errors are logged but don't block the UI.
+ * Persist the store's current state to the backend. Call after `set()` so
+ * `get()` already reflects the change — setters stay one-liners.
+ * Fire-and-forget for UI responsiveness — errors are logged but don't block.
  */
-function persistConfig(config: AppConfig): void {
+function persistCurrent(state: SettingsState): void {
+  const config: AppConfig = {
+    theme: state.theme,
+    language: state.language,
+    window: state.window,
+    lastDownloadPath: state.lastDownloadPath,
+    segmentDownloadConcurrency: state.segmentDownloadConcurrency,
+    updateChannel: state.updateChannel,
+    autoBackupDir: state.autoBackupDir,
+    closeToTray: state.closeToTray,
+  };
   saveConfig(config).catch((err) => {
     console.error("[settingsStore] Failed to persist config:", err);
   });
@@ -73,6 +88,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   segmentDownloadConcurrency: 4,
   updateChannel: "stable",
   autoBackupDir: null,
+  closeToTray: false,
   isLoaded: false,
   settingsTab: "appearance",
 
@@ -88,6 +104,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         updateChannel:
           config.updateChannel === "beta" ? "beta" : "stable",
         autoBackupDir: config.autoBackupDir ?? null,
+        closeToTray: config.closeToTray ?? false,
         isLoaded: true,
       });
     } catch (err) {
@@ -99,101 +116,43 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setTheme: (mode) => {
     set({ theme: mode });
-    const state = get();
-    persistConfig({
-      theme: mode,
-      language: state.language,
-      window: state.window,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: state.updateChannel,
-      autoBackupDir: state.autoBackupDir,
-    });
+    persistCurrent(get());
   },
 
   setLanguage: (lang) => {
     set({ language: lang });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: lang,
-      window: state.window,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: state.updateChannel,
-      autoBackupDir: state.autoBackupDir,
-    });
+    persistCurrent(get());
   },
 
   setWindowState: (windowState) => {
     set({ window: windowState });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: state.language,
-      window: windowState,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: state.updateChannel,
-      autoBackupDir: state.autoBackupDir,
-    });
+    persistCurrent(get());
   },
 
   setLastDownloadPath: (path) => {
     set({ lastDownloadPath: path });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: state.language,
-      window: state.window,
-      lastDownloadPath: path,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: state.updateChannel,
-      autoBackupDir: state.autoBackupDir,
-    });
-  },
-
-  setAutoBackupDir: (dir) => {
-    set({ autoBackupDir: dir });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: state.language,
-      window: state.window,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: state.updateChannel,
-      autoBackupDir: dir,
-    });
+    persistCurrent(get());
   },
 
   setSegmentDownloadConcurrency: (n) => {
     const clamped = Math.min(16, Math.max(1, Math.round(n) || 4));
     set({ segmentDownloadConcurrency: clamped });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: state.language,
-      window: state.window,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: clamped,
-      updateChannel: state.updateChannel,
-      autoBackupDir: state.autoBackupDir,
-    });
+    persistCurrent(get());
   },
 
   setUpdateChannel: (channel) => {
     set({ updateChannel: channel });
-    const state = get();
-    persistConfig({
-      theme: state.theme,
-      language: state.language,
-      window: state.window,
-      lastDownloadPath: state.lastDownloadPath,
-      segmentDownloadConcurrency: state.segmentDownloadConcurrency,
-      updateChannel: channel,
-      autoBackupDir: state.autoBackupDir,
-    });
+    persistCurrent(get());
+  },
+
+  setAutoBackupDir: (dir) => {
+    set({ autoBackupDir: dir });
+    persistCurrent(get());
+  },
+
+  setCloseToTray: (value) => {
+    set({ closeToTray: value });
+    persistCurrent(get());
   },
 
   setSettingsTab: (tab) => {

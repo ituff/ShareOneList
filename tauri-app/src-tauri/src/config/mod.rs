@@ -371,6 +371,7 @@ mod tests {
             segment_download_concurrency: 8,
             update_channel: "stable".to_string(),
             auto_backup_dir: None,
+            close_to_tray: false,
         };
 
         mgr.save_config(&config).unwrap();
@@ -513,6 +514,7 @@ mod tests {
             segment_download_concurrency: 8,
             update_channel: "beta".to_string(),
             auto_backup_dir: None,
+            close_to_tray: false,
         })
         .unwrap();
         mgr.save_accounts(&accounts).unwrap();

@@ -79,16 +79,13 @@ export function useWindowState(): void {
 
     async function restoreWindowState() {
       try {
-        // Load config from backend
+        // Load config from backend. The settings store is loaded separately
+        // (App's loadConfig) — this hook must not setState here: a partial
+        // update used to leave newer config fields (closeToTray, …) at their
+        // initial defaults while marking the store loaded, and the next
+        // window-move persist then wiped them on disk.
         const config = await getConfig();
         configRef.current = config;
-        useSettingsStore.setState({
-          theme: config.theme,
-          language: config.language,
-          window: config.window,
-          lastDownloadPath: config.lastDownloadPath ?? null,
-          isLoaded: true,
-        });
         const windowState = config.window;
 
         // Get available monitors for bounds checking
@@ -134,6 +131,9 @@ export function useWindowState(): void {
     }
 
     async function saveWindowState() {
+      // The store holds the whole config; persisting before it loaded would
+      // write initial defaults over the user's saved settings.
+      if (!useSettingsStore.getState().isLoaded) return;
       try {
         const appWindow = getCurrentWindow();
         const size = await appWindow.innerSize();

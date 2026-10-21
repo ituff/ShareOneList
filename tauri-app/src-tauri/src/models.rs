@@ -140,6 +140,10 @@ pub struct AppConfig {
     /// sync folder). `None` disables auto backup.
     #[serde(default)]
     pub auto_backup_dir: Option<String>,
+    /// When set, closing the main window hides it to the tray (the app and
+    /// the WebDAV gateway keep running) instead of exiting.
+    #[serde(default)]
+    pub close_to_tray: bool,
 }
 
 fn default_segment_concurrency() -> u32 {
@@ -268,6 +272,7 @@ impl Default for AppConfig {
             segment_download_concurrency: default_segment_concurrency(),
             update_channel: "stable".to_string(),
             auto_backup_dir: None,
+            close_to_tray: false,
         }
     }
 }

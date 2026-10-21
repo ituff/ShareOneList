@@ -152,6 +152,8 @@ export interface AppConfig {
   updateChannel: "stable" | "beta";
   /** Directory receiving automatic config backups; null disables. */
   autoBackupDir: string | null;
+  /** Closing the main window hides it to the tray instead of exiting. */
+  closeToTray: boolean;
 }
 
 // ─── LLM Providers (AI assistant) ───────────────────────────────────────────

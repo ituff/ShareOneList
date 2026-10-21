@@ -272,6 +272,74 @@ impl WebDavManager {
         Ok(())
     }
 
+    async fn set_auto_mount(&self, mount_id: &str, value: bool) -> Result<(), String> {
+        let mut state = self.inner.state.write().await;
+        let Some(entry) = state
+            .config
+            .mounts
+            .iter_mut()
+            .find(|m| m.mount_id == mount_id)
+        else {
+            return Err("mount_not_found".to_string());
+        };
+        if entry.auto_mount != value {
+            entry.auto_mount = value;
+            self.inner.store.save(&state.config)?;
+        }
+        Ok(())
+    }
+
+    /// Map the mount in the OS (drive letter on Windows, Finder volume on
+    /// macOS) and flag it for auto-restore on the next app start.
+    pub async fn mount(&self, mount_id: &str) -> Result<String, String> {
+        let (entry, info, port) = self.connection_info(mount_id).await?;
+        let point = platform::mount_drive(
+            port,
+            mount_id,
+            &info.username,
+            &info.password,
+            entry.drive_letter.as_deref(),
+        )?;
+
+        // Remember auto-assigned letters so remounts (and unmount) reuse them.
+        #[cfg(windows)]
+        if entry.drive_letter.is_none() && point.len() == 2 && point.ends_with(':') {
+            let _ = self
+                .set_drive_letter(mount_id, Some(point[..1].to_string()))
+                .await;
+        }
+        self.set_auto_mount(mount_id, true).await?;
+        Ok(point)
+    }
+
+    /// Unmap the mount and clear the auto-restore flag. For EXPLICIT unmounts
+    /// only — the quit-time auto-unmount goes through `platform::unmount_drive`
+    /// directly and keeps the flag, so the next launch restores the working set.
+    pub async fn unmount(&self, mount_id: &str) -> Result<(), String> {
+        let (entry, _info, port) = self.connection_info(mount_id).await?;
+        platform::unmount_drive(port, mount_id, entry.drive_letter.as_deref())?;
+        self.set_auto_mount(mount_id, false).await
+    }
+
+    /// Re-mount the user's working set after the gateway is up: every entry
+    /// flagged `auto_mount` that is not currently mapped. Best-effort — one
+    /// failure (logged-out account, stale letter) must not block the others,
+    /// and its flag stays set so the next start retries.
+    pub async fn restore_auto_mounts(&self) {
+        let status = self.status().await;
+        let targets: Vec<String> = status
+            .mounts
+            .iter()
+            .filter(|m| m.entry.auto_mount && !m.mounted)
+            .map(|m| m.entry.mount_id.clone())
+            .collect();
+        for mount_id in targets {
+            if let Err(e) = self.mount(&mount_id).await {
+                eprintln!("[webdav] auto-restore mount {} failed: {}", mount_id, e);
+            }
+        }
+    }
+
     pub async fn status(&self) -> WebDavStatus {
         let state = self.inner.state.read().await;
         let base = if state.running {

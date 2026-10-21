@@ -21,6 +21,7 @@ import { BackupSettings } from "../settings/BackupSettings";
 import { WebDavMountSettings } from "../settings/WebDavMountSettings";
 import { HomePage } from "../home/HomePage";
 import { LlmSettings } from "../settings/LlmSettings";
+import { GeneralSettings } from "../settings/GeneralSettings";
 import { MemorySettings } from "../settings/MemorySettings";
 import { SitemapPage } from "../sitemap/SitemapPage";
 import type {
@@ -287,6 +288,7 @@ function SettingsPage() {
         {(
           [
             ["appearance", t("settings.tabAppearance")],
+            ["general", t("settings.tabGeneral")],
             ["downloads", t("settings.tabDownloads")],
             ["ai", t("settings.tabAI")],
             ["backup", t("settings.tabBackup")],
@@ -356,6 +358,8 @@ function SettingsPage() {
       </section>
       </>
       )}
+
+      {settingsTab === "general" && <GeneralSettings />}
 
       {settingsTab === "downloads" && (
       <section className="space-y-3 rounded-lg border border-border bg-card p-4">

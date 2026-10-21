@@ -180,6 +180,12 @@
     "title": "设置",
     "description": "配置主题、语言和偏好设置。",
     "appearance": "外观",
+    "general": "通用",
+    "tabGeneral": "通用",
+    "closeToTray": "关闭窗口时驻留托盘",
+    "closeToTrayHint": "关闭窗口后应用驻留系统托盘，云盘挂载与后台任务保持在线；可从托盘图标重新打开或退出。",
+    "autostart": "开机自启动",
+    "autostartHint": "登录系统后自动启动 ShareOneList。",
     "theme": "主题",
     "themeLight": "浅色",
     "themeDark": "深色",
@@ -569,10 +575,14 @@
   },
   "closeGuard": {
     "title": "挂载点正在使用",
-    "message": "退出 ShareOneList 后，已挂载的盘符 / 卷会立即断开。推荐最小化到任务栏保持后台运行，挂载保持可用；也可以先断开全部挂载再退出。",
-    "minimize": "最小化到任务栏（推荐）",
+    "message": "有云盘挂载正在使用。驻留托盘可保持挂载在线（推荐）；也可以先断开全部挂载再退出。",
+    "hideToTray": "驻留托盘（推荐）",
     "unmountAndExit": "断开挂载并退出",
     "unmounting": "正在断开挂载…"
+  },
+  "tray": {
+    "open": "打开 ShareOneList",
+    "quit": "退出"
   },
   "webdavMount": {
     "title": "云盘挂载",

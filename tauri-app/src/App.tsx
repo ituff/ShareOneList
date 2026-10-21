@@ -1,4 +1,5 @@
 import { Suspense, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Sidebar } from "./components/layout/Sidebar";
 import { MainContent } from "./components/layout/MainContent";
 import { ToastContainer } from "./components/ui/Toast";
@@ -13,6 +14,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { useAuthStore } from "./stores/authStore";
 import { initTaskListener, useTaskStore } from "./stores/taskStore";
 import { initUpdateProgressListener } from "./stores/updateStore";
+import { setTrayMenuLabels } from "./lib/tauri";
 import { syncLanguageFromStore } from "./i18n";
 
 function App() {
@@ -59,6 +61,12 @@ function App() {
       syncLanguageFromStore(language);
     }
   }, [isLoaded, language]);
+
+  // Keep the resident tray menu localized with the UI language.
+  const { t, i18n } = useTranslation();
+  useEffect(() => {
+    setTrayMenuLabels(t("tray.open"), t("tray.quit")).catch(() => undefined);
+  }, [i18n.language, t]);
 
   return (
     <Suspense fallback={<div className="flex h-screen w-screen items-center justify-center bg-background text-foreground">Loading...</div>}>

@@ -111,6 +111,9 @@ pub async fn webdav_create_mount(
         root_item_id,
         label,
         drive_letter,
+        // Not yet mounted; `WebDavManager::mount` sets the flag when the user
+        // maps the drive.
+        auto_mount: false,
     };
     manager
         .create_mount(entry.clone())
@@ -141,47 +144,24 @@ pub async fn webdav_rename_mount(
         .map_err(config_err)
 }
 
-/// Map the mount in the OS (drive letter on Windows, Finder volume on macOS).
+/// Map the mount in the OS (drive letter on Windows, Finder volume on macOS)
+/// and flag it for auto-restore on the next app start.
 #[tauri::command]
 pub async fn webdav_mount(
     mount_id: String,
     manager: State<'_, WebDavManager>,
 ) -> Result<MountResult, AppError> {
-    let (entry, info, port) = manager
-        .connection_info(&mount_id)
-        .await
-        .map_err(config_err)?;
-    let point = platform::mount_drive(
-        port,
-        &mount_id,
-        &info.username,
-        &info.password,
-        entry.drive_letter.as_deref(),
-    )
-    .map_err(config_err)?;
-
-    // Remember auto-assigned letters so remounts (and unmount) reuse them.
-    #[cfg(windows)]
-    if entry.drive_letter.is_none() && point.len() == 2 && point.ends_with(':') {
-        let _ = manager
-            .set_drive_letter(&mount_id, Some(point[..1].to_string()))
-            .await;
-    }
-
+    let point = manager.mount(&mount_id).await.map_err(config_err)?;
     Ok(MountResult { mount_point: point })
 }
 
+/// Unmap the mount and clear its auto-restore flag (explicit unmount only).
 #[tauri::command]
 pub async fn webdav_unmount(
     mount_id: String,
     manager: State<'_, WebDavManager>,
 ) -> Result<(), AppError> {
-    let (entry, _info, port) = manager
-        .connection_info(&mount_id)
-        .await
-        .map_err(config_err)?;
-    platform::unmount_drive(port, &mount_id, entry.drive_letter.as_deref())
-        .map_err(config_err)
+    manager.unmount(&mount_id).await.map_err(config_err)
 }
 
 #[tauri::command]
