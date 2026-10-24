@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use futures::StreamExt;
 use serde::Deserialize;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -8,7 +9,10 @@ use crate::auth::cloud_config::CloudEnvironment;
 use crate::auth::AuthModule;
 use crate::errors::AppError;
 use crate::graph::GraphClient;
-use crate::transfer::download::{BatchInfo, BatchSnapshot, DownloadEngine, DownloadParams};
+use crate::transfer::download::{
+    BatchFileRecord, BatchInfo, BatchSnapshot, DownloadEngine, DownloadParams, FileVerifyResult,
+    verify_download_integrity,
+};
 use crate::transfer::stream_bridge::{start_upload_server, StreamDownloadChannel};
 use crate::transfer::upload::{upload_folder_recursive, UploadEngine, UploadParams};
 
@@ -57,6 +61,61 @@ struct RawDriveItem {
     #[serde(rename = "remoteItem")]
     remote_item: Option<TransferRemoteItem>,
     package: Option<serde_json::Value>,
+    file: Option<TransferFileMeta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TransferFileMeta {
+    hashes: Option<TransferHashes>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferHashes {
+    quick_xor_hash: Option<String>,
+}
+
+impl RawDriveItem {
+    fn quick_xor_hash(&self) -> Option<String> {
+        self.file
+            .as_ref()
+            .and_then(|f| f.hashes.as_ref())
+            .and_then(|h| h.quick_xor_hash.clone())
+            .or_else(|| {
+                self.remote_item
+                    .as_ref()
+                    .and_then(|r| r.file.as_ref())
+                    .and_then(|f| f.hashes.as_ref())
+                    .and_then(|h| h.quick_xor_hash.clone())
+            })
+    }
+}
+
+/// Fetch an item's quickXorHash from Graph. Returns None when the item has no
+/// hash or the lookup fails — verification then falls back to size-only.
+async fn fetch_quick_xor_hash(
+    client: &GraphClient,
+    token: &str,
+    drive_id: &str,
+    item_id: &str,
+) -> Option<String> {
+    let url = format!(
+        "{}/drives/{}/items/{}?$select=file",
+        client.base_url(),
+        drive_id,
+        item_id
+    );
+    let response = match client
+        .request_with_retry(token, |http, tkn| http.get(&url).bearer_auth(tkn))
+        .await
+    {
+        Ok(response) => response,
+        Err(_) => return None,
+    };
+    let json: serde_json::Value = response.json().await.ok()?;
+    json["file"]["hashes"]["quickXorHash"]
+        .as_str()
+        .map(str::to_string)
 }
 
 /// A single file to include in a batch download.
@@ -72,6 +131,7 @@ pub struct FileDownloadSpec {
 struct TransferRemoteItem {
     folder: Option<serde_json::Value>,
     package: Option<serde_json::Value>,
+    file: Option<TransferFileMeta>,
 }
 
 /// Recursively list all files in a folder, creating local directories as needed.
@@ -82,7 +142,7 @@ async fn list_folder_recursive(
     drive_id: &str,
     folder_id: &str,
     local_base: &PathBuf,
-) -> Result<Vec<(String, String, u64, PathBuf)>, AppError> {
+) -> Result<Vec<(String, String, u64, PathBuf, Option<String>)>, AppError> {
     let mut files = Vec::new();
     let base = client.base_url();
 
@@ -104,6 +164,7 @@ async fn list_folder_recursive(
             })?;
 
         for item in collection.value {
+            let quick_xor_hash = item.quick_xor_hash();
             let name = item.name.unwrap_or_default();
             let id = item.id.unwrap_or_default();
 
@@ -137,7 +198,7 @@ async fn list_folder_recursive(
                 // File: add to the list
                 let size = item.size.unwrap_or(0);
                 let file_path = local_base.join(&name);
-                files.push((name, id, size, file_path));
+                files.push((name, id, size, file_path, quick_xor_hash));
             }
         }
 
@@ -184,6 +245,7 @@ pub async fn download_file(
         drive_id,
         item_id
     );
+    let quick_xor_hash = fetch_quick_xor_hash(&client, &token, &drive_id, &item_id).await;
 
     // Create a single-file batch so the UI always sees one downloadable task.
     let mut engine = download_engine.lock().await;
@@ -200,6 +262,7 @@ pub async fn download_file(
                 total_bytes: file_size,
                 download_url,
                 bearer_token: Some(token.clone()),
+                quick_xor_hash,
             }],
         )
         .await
@@ -223,7 +286,7 @@ pub async fn download_files(
         auth.get_token_for_drive(env.clone(), &drive_id).await?
     };
 
-    let client = GraphClient::new(env);
+    let client = GraphClient::new(env.clone());
     let local_base = PathBuf::from(&local_dir);
     tokio::fs::create_dir_all(&local_base)
         .await
@@ -232,9 +295,26 @@ pub async fn download_files(
             path: local_dir.clone(),
         })?;
 
+    // Owned values only in the per-file future: borrowed closures inside a
+    // buffered stream trip the tauri command macro's lifetime analysis.
+    let item_ids: Vec<String> = files.iter().map(|f| f.item_id.clone()).collect();
+    let token_for_hash = token.clone();
+    let drive_for_hash = drive_id.clone();
+    let hashes: Vec<Option<String>> = futures::stream::iter(item_ids)
+        .map(|item_id| {
+            let client = GraphClient::new(env.clone());
+            let token = token_for_hash.clone();
+            let drive_id = drive_for_hash.clone();
+            async move { fetch_quick_xor_hash(&client, &token, &drive_id, &item_id).await }
+        })
+        .buffer_unordered(6)
+        .collect()
+        .await;
+
     let params = files
         .into_iter()
-        .map(|file| {
+        .zip(hashes)
+        .map(|(file, quick_xor_hash)| {
             let download_url = format!(
                 "{}/drives/{}/items/{}/content",
                 client.base_url(),
@@ -251,6 +331,7 @@ pub async fn download_files(
                 total_bytes: file.file_size,
                 download_url,
                 bearer_token: Some(token.clone()),
+                quick_xor_hash,
             }
         })
         .collect::<Vec<_>>();
@@ -291,7 +372,7 @@ pub async fn download_folder(
 
     let params = files
         .into_iter()
-        .map(|(file_name, file_item_id, file_size, file_path)| {
+        .map(|(file_name, file_item_id, file_size, file_path, quick_xor_hash)| {
             let download_url = format!(
                 "{}/drives/{}/items/{}/content",
                 client.base_url(),
@@ -308,6 +389,7 @@ pub async fn download_folder(
                 total_bytes: file_size,
                 download_url,
                 bearer_token: Some(token.clone()),
+                quick_xor_hash,
             }
         })
         .collect::<Vec<_>>();
@@ -322,6 +404,204 @@ pub async fn get_download_tasks(
     download_engine: State<'_, Mutex<DownloadEngine>>,
 ) -> Result<Vec<BatchSnapshot>, AppError> {
     Ok(download_engine.lock().await.snapshot_batches())
+}
+
+/// Verify every downloaded file of a batch against the cloud copy: size
+/// always, quickXorHash whenever the cloud provides one (persisted for new
+/// tasks, fetched per-item from Graph for legacy ones).
+#[tauri::command]
+pub async fn verify_batch_files(
+    cloud_env: String,
+    task_id: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+    download_engine: State<'_, Mutex<DownloadEngine>>,
+) -> Result<Vec<FileVerifyResult>, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let (home_account_id, records) = {
+        let engine = download_engine.lock().await;
+        engine
+            .batch_files_for_verification(&task_id)
+            .ok_or_else(|| AppError::Transfer {
+                message: "Task not found".to_string(),
+                task_id: task_id.clone(),
+            })?
+    };
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+
+    // Owned values only in the per-file future (see the note in download_files).
+    let results: Vec<FileVerifyResult> = futures::stream::iter(records)
+        .map(|record| {
+            let client = GraphClient::new(env.clone());
+            let token = token.clone();
+            async move { verify_one_file(record, &client, &token).await }
+        })
+        .buffer_unordered(4)
+        .collect()
+        .await;
+    Ok(results)
+}
+
+async fn verify_one_file(
+    record: BatchFileRecord,
+    client: &GraphClient,
+    token: &str,
+) -> FileVerifyResult {
+    let file_name = record.file_name.clone();
+    if record.status != "completed" {
+        return FileVerifyResult {
+            file_name,
+            status: "not-downloaded".to_string(),
+            detail: None,
+        };
+    }
+    let path = PathBuf::from(&record.local_path);
+    if !path.exists() {
+        return FileVerifyResult {
+            file_name,
+            status: "missing".to_string(),
+            detail: None,
+        };
+    }
+
+    // Tasks that finished before hash verification existed have no persisted
+    // hash: ask Graph for the item's quickXorHash so the check covers
+    // content, not just size.
+    let mut hash = record.quick_xor_hash.clone();
+    if hash.is_none() {
+        hash = fetch_quick_xor_hash(client, token, &record.drive_id, &record.item_id).await;
+        if hash.is_none() {
+            return match tokio::fs::metadata(&path).await {
+                Ok(meta) if meta.len() == record.total_bytes => FileVerifyResult {
+                    file_name,
+                    status: "hash-unavailable".to_string(),
+                    detail: Some("size ok; cloud hash unavailable".to_string()),
+                },
+                Ok(meta) => FileVerifyResult {
+                    file_name,
+                    status: "size-mismatch".to_string(),
+                    detail: Some(format!(
+                        "expected {} bytes, got {}",
+                        record.total_bytes,
+                        meta.len()
+                    )),
+                },
+                Err(e) => FileVerifyResult {
+                    file_name,
+                    status: "missing".to_string(),
+                    detail: Some(e.to_string()),
+                },
+            };
+        }
+    }
+
+    match verify_download_integrity(&path, record.total_bytes, hash.as_deref()).await {
+        Ok(()) => FileVerifyResult {
+            file_name,
+            status: "verified".to_string(),
+            detail: None,
+        },
+        Err(e) => {
+            let status = if e.contains("size mismatch") {
+                "size-mismatch"
+            } else {
+                "hash-mismatch"
+            };
+            FileVerifyResult {
+                file_name,
+                status: status.to_string(),
+                detail: Some(e),
+            }
+        }
+    }
+}
+
+/// Re-download the files a verification flagged as missing or corrupt: they
+/// are dropped from the old batch (bad local artifacts deleted) and queued
+/// again under a fresh batch at the same local paths.
+#[tauri::command]
+pub async fn redownload_files(
+    cloud_env: String,
+    task_id: String,
+    file_names: Vec<String>,
+    new_batch_name: String,
+    auth_module: State<'_, Mutex<AuthModule>>,
+    download_engine: State<'_, Mutex<DownloadEngine>>,
+) -> Result<BatchInfo, AppError> {
+    let env = parse_cloud_env(&cloud_env)?;
+    let home_account_id = {
+        let engine = download_engine.lock().await;
+        engine.batch_home_account_id(&task_id).ok_or_else(|| AppError::Transfer {
+            message: "Task not found".to_string(),
+            task_id: task_id.clone(),
+        })?
+    };
+    let token = {
+        let mut auth = auth_module.lock().await;
+        auth.get_token_for_account(env.clone(), &home_account_id)
+            .await?
+    };
+    let client = GraphClient::new(env.clone());
+    let base_url = client.base_url().to_string();
+
+    let mut params = {
+        let mut engine = download_engine.lock().await;
+        engine
+            .take_completed_files_for_redownload(
+                &task_id,
+                &file_names,
+                &base_url,
+                &token,
+                env_string(&env).as_str(),
+            )
+            .await
+    };
+    if params.is_empty() {
+        return Err(AppError::Transfer {
+            message: "No files matched for re-download".to_string(),
+            task_id,
+        });
+    }
+
+    // Fetch hashes for files whose legacy records lack one, so the fresh
+    // tasks verify on completion like any new download.
+    let missing: Vec<String> = params
+        .iter()
+        .filter(|p| p.quick_xor_hash.is_none())
+        .map(|p| p.item_id.clone())
+        .collect();
+    if !missing.is_empty() {
+        let keys = missing.clone();
+        let fetched: Vec<Option<String>> = futures::stream::iter(missing)
+            .map(|item_id| {
+                let client = GraphClient::new(env.clone());
+                let token = token.clone();
+                let drive_id = params
+                    .iter()
+                    .find(|p| p.item_id == item_id)
+                    .map(|p| p.drive_id.clone())
+                    .unwrap_or_default();
+                async move { fetch_quick_xor_hash(&client, &token, &drive_id, &item_id).await }
+            })
+            .buffer_unordered(6)
+            .collect()
+            .await;
+        let by_item: std::collections::HashMap<String, Option<String>> = keys
+            .into_iter()
+            .zip(fetched)
+            .collect();
+        for param in params.iter_mut() {
+            if param.quick_xor_hash.is_none() {
+                param.quick_xor_hash = by_item.get(&param.item_id).cloned().flatten();
+            }
+        }
+    }
+
+    let mut engine = download_engine.lock().await;
+    engine.create_batch(new_batch_name, params).await
 }
 
 /// Pause a batch download task.

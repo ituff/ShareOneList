@@ -38,6 +38,19 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Transfer failures and resumes land here so download issues can be
+        // diagnosed after the fact (LogDir = %LOCALAPPDATA%/<identifier>/logs).
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("shareonelist".into()),
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         // Close interception lives in Rust so it also covers the Windows
         // taskbar "close window" command while the WebView2 is minimized
         // (see tray.rs).
@@ -165,6 +178,8 @@ pub fn run() {
             transfer::commands::download_files,
             transfer::commands::download_folder,
             transfer::commands::get_download_tasks,
+            transfer::commands::verify_batch_files,
+            transfer::commands::redownload_files,
             transfer::commands::pause_download,
             transfer::commands::resume_download,
             transfer::commands::cancel_download,

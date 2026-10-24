@@ -163,6 +163,7 @@ impl UploadEngine {
                     elapsed_secs: 0.0,
                     error,
                     local_path: None,
+                    failed_files: None,
                 },
             );
         });
@@ -258,6 +259,7 @@ async fn run_upload(
                     elapsed_secs: elapsed,
                     error: None,
                     local_path: None,
+                    failed_files: None,
                 },
             );
 

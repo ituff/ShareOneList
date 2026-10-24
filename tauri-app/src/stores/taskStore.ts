@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
-import type { CloudEnvironment, ProgressEvent, TaskStatus } from "../lib/types";
+import type {
+  CloudEnvironment,
+  FailedFileInfo,
+  FileVerifyResult,
+  ProgressEvent,
+  TaskStatus,
+} from "../lib/types";
 import { getDownloadTasks } from "../lib/tauri";
 import { useNotificationStore } from "./notificationStore";
 import i18n from "../i18n";
@@ -21,6 +27,8 @@ export interface TaskEntry {
   itemId?: string;
   homeAccountId?: string;
   localPath?: string;
+  failedFiles?: FailedFileInfo[];
+  verifyResults?: FileVerifyResult[];
 }
 
 interface TaskStoreState {
@@ -30,6 +38,7 @@ interface TaskStoreState {
   updateTask: (event: ProgressEvent) => void;
   registerTask: (taskId: string, metadata: Partial<TaskEntry>) => void;
   loadDownloadTasks: () => Promise<void>;
+  setVerifyResults: (taskId: string, results: FileVerifyResult[]) => void;
   removeTask: (taskId: string) => void;
   clearCompleted: (type: "download" | "upload") => void;
   setShutdownAfterDownload: (value: boolean) => void;
@@ -61,6 +70,10 @@ export const useTaskStore = create<TaskStoreState>((set) => ({
         elapsedSecs: event.elapsedSecs,
         error: event.error,
         localPath: event.localPath ?? existing?.localPath,
+        failedFiles:
+          event.status === "completed"
+            ? []
+            : (event.failedFiles ?? existing?.failedFiles),
         type,
       });
 
@@ -114,6 +127,7 @@ export const useTaskStore = create<TaskStoreState>((set) => ({
             cloudEnv: snapshot.cloudEnv,
             driveId: snapshot.driveId,
             homeAccountId: snapshot.homeAccountId,
+            failedFiles: snapshot.failedFiles ?? [],
             type: "download",
           });
         }
@@ -122,6 +136,17 @@ export const useTaskStore = create<TaskStoreState>((set) => ({
     } catch {
       // Restore is best-effort; the task list can start empty if loading fails.
     }
+  },
+
+  setVerifyResults: (taskId, results) => {
+    set((state) => {
+      const newTasks = new Map(state.tasks);
+      const existing = newTasks.get(taskId);
+      if (existing) {
+        newTasks.set(taskId, { ...existing, verifyResults: results });
+      }
+      return { tasks: newTasks };
+    });
   },
 
   removeTask: (taskId: string) => {
@@ -182,6 +207,9 @@ export async function initTaskListener() {
           : typeof raw.local_path === "string"
             ? raw.local_path
             : null,
+      failedFiles: Array.isArray(raw.failedFiles)
+        ? (raw.failedFiles as ProgressEvent["failedFiles"])
+        : undefined,
     };
 
     useTaskStore.getState().updateTask(normalized);

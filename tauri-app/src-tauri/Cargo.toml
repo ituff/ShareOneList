@@ -34,6 +34,8 @@ url = "2"
 tokio-util = "0.7"
 futures = "0.3"
 tauri-plugin-single-instance = "2"
+log = "0.4"
+tauri-plugin-log = "2"
 # Office/PDF text extraction for AI context injection
 zip = { version = "2", default-features = false, features = ["deflate"] }
 quick-xml = "0.36"
@@ -45,6 +47,7 @@ hyper = { version = "0.14", features = ["server", "http1", "runtime", "stream"] 
 percent-encoding = "2"
 bytes = "1"
 futures-util = "0.3"
+quickxorhash = "0.1.0"
 
 [dev-dependencies]
 tempfile = "3"

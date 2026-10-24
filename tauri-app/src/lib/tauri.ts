@@ -24,6 +24,7 @@ import type {
   TranscriptExport,
   TranscriptScript,
   UpdateInfo,
+  FileVerifyResult,
 } from "./types";
 
 // ─── Authentication ─────────────────────────────────────────────────────────
@@ -468,6 +469,35 @@ export function downloadFiles(
  */
 export function getDownloadTasks(): Promise<BatchSnapshot[]> {
   return invoke<BatchSnapshot[]>("get_download_tasks");
+}
+
+/**
+ * Verify every downloaded file of a batch against the cloud copy
+ * (size + quickXorHash when the cloud provides one).
+ */
+export function verifyBatchFiles(
+  cloudEnv: CloudEnvironment,
+  taskId: string
+): Promise<FileVerifyResult[]> {
+  return invoke<FileVerifyResult[]>("verify_batch_files", { cloudEnv, taskId });
+}
+
+/**
+ * Remove verified-bad files from a batch (deleting their local artifacts)
+ * and start a fresh batch re-downloading them at the same local paths.
+ */
+export function redownloadFiles(
+  cloudEnv: CloudEnvironment,
+  taskId: string,
+  fileNames: string[],
+  newBatchName: string
+): Promise<BatchInfo> {
+  return invoke<BatchInfo>("redownload_files", {
+    cloudEnv,
+    taskId,
+    fileNames,
+    newBatchName,
+  });
 }
 
 /** Pause an active download task. */

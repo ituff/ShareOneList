@@ -375,6 +375,19 @@ export interface BookmarkEntry {
   createdAt: string;
 }
 
+/** A failed child file inside a download batch, with its actual error. */
+export interface FailedFileInfo {
+  fileName: string;
+  message: string;
+}
+
+/** Result of verifying one downloaded file against the cloud copy. */
+export interface FileVerifyResult {
+  fileName: string;
+  status: string;
+  detail: string | null;
+}
+
 /** Snapshot of a persisted download batch used to restore tasks on startup. */
 export interface BatchSnapshot {
   id: string;
@@ -389,6 +402,7 @@ export interface BatchSnapshot {
   cloudEnv: CloudEnvironment;
   driveId: string;
   homeAccountId: string;
+  failedFiles: FailedFileInfo[];
 }
 
 // ─── Account Info ───────────────────────────────────────────────────────────
@@ -444,6 +458,8 @@ export interface ProgressEvent {
   error: string | null;
   /** Actual local path of the transferred file (downloads only). */
   localPath: string | null;
+  /** Files failed so far in this download batch (downloads only). */
+  failedFiles?: FailedFileInfo[];
 }
 
 // ─── External Downloader ────────────────────────────────────────────────────

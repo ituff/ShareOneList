@@ -104,6 +104,14 @@ pub struct TranscriptScript {
     pub source_name: String,
 }
 
+/// One failed child file inside a batch download, with its actual error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedFile {
+    pub file_name: String,
+    pub message: String,
+}
+
 /// Transfer progress emitted via Tauri events.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,6 +125,9 @@ pub struct ProgressEvent {
     pub elapsed_secs: f64,
     pub error: Option<String>,
     pub local_path: Option<String>,
+    /// Files that have failed within this batch so far. Uploads never set it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_files: Option<Vec<FailedFile>>,
 }
 
 /// Application configuration persisted to disk.
