@@ -6,8 +6,8 @@
 // accept Basic auth over plain HTTP — diagnose() reports each, apply_fix()
 // repairs via an elevated PowerShell one-shot.
 //
-// macOS: hand a webdav:// URL (credentials embedded, localhost-only) to
-// Finder via `open`; unmount via diskutil after locating the volume in
+// macOS: mount directly through NetFSMountURLSync (the API Finder's "Connect
+// to Server" uses); unmount via diskutil after locating the volume in
 // `mount` output.
 
 use serde::Serialize;
@@ -97,7 +97,7 @@ pub fn diagnose() -> Diagnosis {
 }
 
 /// Map the gateway URL as an OS mount; returns the drive letter ("X:") on
-/// Windows or the webdav URL handed to Finder on macOS.
+/// Windows or the /Volumes mount directory on macOS.
 pub fn mount_drive(
     port: u16,
     mount_id: &str,
@@ -113,15 +113,7 @@ pub fn mount_drive(
     #[cfg(target_os = "macos")]
     {
         let _ = preferred_letter;
-        let url = format!(
-            "webdav://{}:{}@127.0.0.1:{}/m/{}",
-            username, password, port, mount_id
-        );
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("failed to open Finder mount: {}", e))?;
-        Ok(url)
+        macos::mount(port, mount_id, username, password)
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -452,6 +444,127 @@ exit 0
 // macOS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Mount through NetFSMountURLSync — the same API Finder's "Connect to
+/// Server" uses.
+///
+/// Why not `open "webdav://…"`: no app claims the webdav:// URL scheme on
+/// current macOS (Finder registers only afp/file/ftp/smb/cifs/nwnode), so
+/// the URL fails inside LaunchServices (kLSApplicationNotFoundErr) without
+/// this process ever learning about it — the user clicks mount and sees
+/// nothing in Finder. NetFS mounts directly, no URL dispatch involved, and
+/// its privileged helper creates the mount directory itself, so the volume
+/// shows up in Finder even when /Volumes is not user-writable. The volume
+/// is named after the URL's last segment, i.e. the mount id — unique per
+/// mount, so several mounts from the same gateway coexist.
+#[cfg(target_os = "macos")]
+mod macos {
+    use core_foundation::base::{CFRelease, TCFType};
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::CFMutableDictionary;
+    use core_foundation::number::CFNumber;
+    use core_foundation::string::CFString;
+    use core_foundation::url::CFURL;
+    use core_foundation_sys::array::CFArrayRef;
+    use core_foundation_sys::base::{kCFAllocatorDefault, CFTypeRef};
+    use core_foundation_sys::dictionary::CFDictionaryRef;
+    use core_foundation_sys::string::CFStringRef;
+    use core_foundation_sys::url::{kCFURLPOSIXPathStyle, CFURLCreateWithString, CFURLRef};
+    use std::os::raw::c_int;
+    use std::ptr;
+
+    // <NetFS/NetFS.h>
+    const K_NET_FS_ALLOW_LOOPBACK_KEY: &str = "AllowLoopback";
+    const K_NAUI_OPTION_KEY: &str = "UIOption";
+    const K_NAUI_OPTION_NO_UI: &str = "NoUI";
+    const K_NET_FS_MOUNT_FLAGS_KEY: &str = "MountFlags";
+    // <sys/mount.h>
+    const MNT_RDONLY: i64 = 0x0000_0001;
+
+    #[link(name = "NetFS", kind = "framework")]
+    extern "C" {
+        fn NetFSMountURLSync(
+            url: CFURLRef,
+            mount_dir: CFURLRef,
+            user: CFStringRef,
+            password: CFStringRef,
+            open_options: CFDictionaryRef,
+            mount_options: CFDictionaryRef,
+            mountpoints: *mut CFArrayRef,
+        ) -> c_int;
+    }
+
+    pub fn mount(
+        port: u16,
+        mount_id: &str,
+        username: &str,
+        password: &str,
+    ) -> Result<String, String> {
+        let url_string = CFString::new(&format!("http://127.0.0.1:{}/m/{}", port, mount_id));
+        let url_ref = unsafe {
+            CFURLCreateWithString(kCFAllocatorDefault, url_string.as_concrete_TypeRef(), ptr::null())
+        };
+        if url_ref.is_null() {
+            return Err("mount_failed_macos_error_url".to_string());
+        }
+        let url = unsafe { CFURL::wrap_under_create_rule(url_ref) };
+        let volumes = CFURL::from_file_system_path(
+            CFString::new("/Volumes"),
+            kCFURLPOSIXPathStyle,
+            true,
+        );
+
+        // Loopback must be whitelisted; NoUI so a rejection surfaces as an
+        // error here instead of a hanging auth dialog. NetFS mutates the
+        // dictionaries it is given (__setObject:forKey:), so both must be
+        // CFMutableDictionary — an immutable one raises an NSException.
+        let open_options = CFMutableDictionary::from_CFType_pairs(&[
+            (
+                CFString::new(K_NET_FS_ALLOW_LOOPBACK_KEY),
+                CFBoolean::true_value().into_CFType(),
+            ),
+            (
+                CFString::new(K_NAUI_OPTION_KEY),
+                CFString::new(K_NAUI_OPTION_NO_UI).into_CFType(),
+            ),
+        ]);
+        // The P0 gateway is read-only; MNT_RDONLY also stops Finder writing
+        // ._*/.DS_Store junk at it (fs.rs already filters those from lists).
+        let mount_options = CFMutableDictionary::from_CFType_pairs(&[(
+            CFString::new(K_NET_FS_MOUNT_FLAGS_KEY),
+            CFNumber::from(MNT_RDONLY).into_CFType(),
+        )]);
+
+        let user = CFString::new(username);
+        let password = CFString::new(password);
+        let mut mountpoints: CFArrayRef = ptr::null_mut();
+        let err = unsafe {
+            NetFSMountURLSync(
+                url.as_concrete_TypeRef(),
+                volumes.as_concrete_TypeRef(),
+                user.as_concrete_TypeRef(),
+                password.as_concrete_TypeRef(),
+                open_options.as_concrete_TypeRef(),
+                mount_options.as_concrete_TypeRef(),
+                &mut mountpoints,
+            )
+        };
+        if !mountpoints.is_null() {
+            unsafe { CFRelease(mountpoints as CFTypeRef) };
+        }
+
+        if err == 0 || err == 17 {
+            // 17 = EEXIST: already mounted, treat as idempotent re-click.
+            // We only need the mount dir — locate it the same way unmount
+            // and detect_mounted do.
+            if let Some(dir) = super::macos_find_volume_dir(port, mount_id) {
+                return Ok(dir);
+            }
+            return Err("mount_state_not_found".to_string());
+        }
+        Err(format!("mount_failed_macos_error_{}", err))
+    }
+}
+
 /// Find the /Volumes directory backing our webdav mount, via `mount` output:
 /// `//user@127.0.0.1:3980/m/{id} on /Volumes/{name} (webdav, ...)`.
 #[cfg(target_os = "macos")]
@@ -502,6 +615,9 @@ pub fn apply_fix() -> Result<(), String> {
 mod tests {
     use super::*;
 
+    // The `win` module and WNet plumbing exist only on Windows; these tests
+    // would fail to compile on macOS/Linux otherwise.
+    #[cfg(windows)]
     #[test]
     fn remote_name_is_http_form() {
         // The UNC \\host@port form regressed to ERROR_BAD_NET_NAME on current
@@ -511,6 +627,7 @@ mod tests {
 
     // Feature: webdav-mount, Property 7: drive-letter lookup recognizes every
     // remote spelling WNet reports for our mounts, legacy or http-normalized.
+    #[cfg(windows)]
     #[test]
     fn remote_match_accepts_all_redirector_spellings() {
         // legacy UNC mapping (older builds / older app versions)

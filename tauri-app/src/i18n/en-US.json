@@ -675,6 +675,7 @@
     "errWebclient": "WebClient service error. Run the diagnosis below.",
     "errFixFailed": "Fix was cancelled or failed",
     "errPlatform": "Not supported on this platform",
-    "errNoDrive": "No document library selected"
+    "errNoDrive": "No document library selected",
+    "errMountFailed": "Mount failed — make sure the in-app gateway is running, then retry"
   }
 }

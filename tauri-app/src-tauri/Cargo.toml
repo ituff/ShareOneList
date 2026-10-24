@@ -59,3 +59,7 @@ custom-protocol = ["tauri/custom-protocol"]
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_NetworkManagement_WNet"] }
 winreg = "0.56.0"
+
+[target."cfg(target_os = \"macos\")".dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"

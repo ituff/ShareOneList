@@ -675,6 +675,7 @@
     "errWebclient": "WebClient 服务异常，请运行下方诊断。",
     "errFixFailed": "修复被取消或失败",
     "errPlatform": "当前平台不支持",
-    "errNoDrive": "请选择一个文档库"
+    "errNoDrive": "请选择一个文档库",
+    "errMountFailed": "挂载失败 — 请确认应用内网关运行中，再重试一次"
   }
 }

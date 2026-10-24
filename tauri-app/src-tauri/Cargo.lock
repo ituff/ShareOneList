@@ -3961,6 +3961,8 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "chrono",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
  "dav-server",
  "futures",
  "futures-util",

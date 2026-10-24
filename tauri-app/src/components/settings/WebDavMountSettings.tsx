@@ -673,6 +673,7 @@ function mountErrorText(t: (key: string) => string, raw: string): string {
     webclient_error_check_diagnostics: "webdavMount.errWebclient",
     fix_cancelled_or_failed: "webdavMount.errFixFailed",
     platform_not_supported: "webdavMount.errPlatform",
+    mount_failed_macos_error: "webdavMount.errMountFailed",
   };
   for (const [needle, key] of Object.entries(sentinels)) {
     if (raw.includes(needle)) return t(key);
