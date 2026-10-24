@@ -335,7 +335,10 @@ impl WebDavManager {
             .collect();
         for mount_id in targets {
             if let Err(e) = self.mount(&mount_id).await {
-                eprintln!("[webdav] auto-restore mount {} failed: {}", mount_id, e);
+                // Must reach the log file: an eprintln is invisible for a
+                // windowed app, and a silently failed restore reads to the
+                // user as "the app says mounted but Explorer shows nothing".
+                log::warn!("[webdav] auto-restore mount {} failed: {}", mount_id, e);
             }
         }
     }

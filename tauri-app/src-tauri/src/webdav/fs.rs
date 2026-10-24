@@ -10,7 +10,7 @@
 // reuse GraphClient's 5xx retry. Graph access tokens never leave this process.
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
@@ -34,6 +34,10 @@ const CHILDREN_SELECT: &str = "id,name,size,file,folder,lastModifiedDateTime,eTa
 /// to the (pre-authenticated) download URL, so batch well above dav-server's
 /// 256KB read_buf_size to keep large-file copies at ~4 requests per 16MB.
 const PREFETCH_CHUNK: usize = 4 * 1024 * 1024;
+/// Total budget for one 4MB range fetch. The shared GraphClient defaults to a
+/// 30s whole-request timeout, which is too tight for cross-border SharePoint
+/// links mid-transfer; reads may legitimately take minutes.
+const RANGE_FETCH_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Characters percent-encoded inside a single Graph path-addressing segment.
 /// Filenames cannot contain `/ \ : * ? " < > |` per our validators, but other
@@ -175,6 +179,14 @@ fn parse_rfc3339(s: &str) -> Option<SystemTime> {
         .map(|dt| SystemTime::from(dt.with_timezone(&Utc)))
 }
 
+/// Pull `@microsoft.graph.downloadUrl` out of a driveItem JSON. An instance
+/// annotation property on the item object itself (never nested).
+fn extract_download_url(item: &serde_json::Value) -> Option<String> {
+    item["@microsoft.graph.downloadUrl"]
+        .as_str()
+        .map(|s| s.to_string())
+}
+
 fn fs_error(err: &AppError) -> FsError {
     match err {
         AppError::GraphApi {
@@ -256,21 +268,25 @@ impl FsCtx {
 
     /// Raw `@microsoft.graph.downloadUrl` for a file item. The URL is
     /// pre-authenticated and short-lived; we fetch it once per open file.
+    ///
+    /// The item MUST be fetched without `$select`: the download URL is an
+    /// OData instance annotation, and a `$select` projection drops it, so
+    /// `items/{id}?$select=id,@microsoft.graph.downloadUrl` comes back without
+    /// the property and every file read would fail (Explorer then shows all
+    /// files as 0-byte placeholders). The full item JSON is tiny; the children
+    /// listing in the transfer engine relies on the same full-shape responses.
     async fn fetch_download_url(&self, item_id: &str) -> Result<String, AppError> {
         let url = format!(
-            "{}/drives/{}/items/{}?$select=id,@microsoft.graph.downloadUrl",
+            "{}/drives/{}/items/{}",
             self.base_url(),
             self.drive_id,
             item_id
         );
         let json = self.get_json(&url).await?;
-        json["@microsoft.graph.downloadUrl"]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| AppError::GraphApi {
-                message: "Graph did not return a download URL".to_string(),
-                status_code: 0,
-            })
+        extract_download_url(&json).ok_or_else(|| AppError::GraphApi {
+            message: "Graph did not return a download URL".to_string(),
+            status_code: 0,
+        })
     }
 }
 
@@ -523,7 +539,15 @@ impl GraphFile {
                     .ctx
                     .fetch_download_url(&self.item.id)
                     .await
-                    .map_err(|_| FsError::GeneralFailure)?;
+                    .map_err(|e| {
+                        log::warn!(
+                            "[webdav] no download URL for {} ({}): {:?}",
+                            self.item.name,
+                            self.item.id,
+                            e
+                        );
+                        FsError::GeneralFailure
+                    })?;
                 self.download_url = Some(u.clone());
                 u
             }
@@ -538,13 +562,35 @@ impl GraphFile {
             .http()
             .get(&url)
             .header("Range", &range)
+            .timeout(RANGE_FETCH_TIMEOUT)
             .send()
             .await
-            .map_err(|_| FsError::GeneralFailure)?;
+            .map_err(|e| {
+                log::warn!(
+                    "[webdav] range fetch {} for {} failed: {}",
+                    range,
+                    self.item.name,
+                    e
+                );
+                FsError::GeneralFailure
+            })?;
         if !response.status().is_success() {
+            log::warn!(
+                "[webdav] range fetch {} for {} got HTTP {}",
+                range,
+                self.item.name,
+                response.status()
+            );
             return Err(FsError::GeneralFailure);
         }
-        let body = response.bytes().await.map_err(|_| FsError::GeneralFailure)?;
+        let body = response.bytes().await.map_err(|e| {
+            log::warn!(
+                "[webdav] range body for {} failed: {}",
+                self.item.name,
+                e
+            );
+            FsError::GeneralFailure
+        })?;
         self.buf_start = start;
         self.buf = body;
         Ok(())
@@ -661,6 +707,28 @@ mod tests {
             decode_segments(b"/docs/2026/report final.docx"),
             vec!["docs", "2026", "report final.docx"]
     );
+    }
+
+    // Feature: webdav-mount, Property 6: the download URL is read from the
+    // plain driveItem JSON — a `$select` projection (which drops the instance
+    // annotation) must never be used, and a full item must parse.
+    #[test]
+    fn download_url_extracts_instance_annotation() {
+        let full: serde_json::Value = serde_json::json!({
+            "id": "01ABC",
+            "name": "a.zip",
+            "size": 1234,
+            "@content.downloadUrl": "https://spo.example/other",
+            "@microsoft.graph.downloadUrl": "https://spo.example/preauth?tempauth=xyz",
+        });
+        assert_eq!(
+            extract_download_url(&full).as_deref(),
+            Some("https://spo.example/preauth?tempauth=xyz")
+        );
+        // A $select-shaped response: no annotation -> None (never panic).
+        let projected: serde_json::Value = serde_json::json!({ "id": "01ABC" });
+        assert!(extract_download_url(&projected).is_none());
+        assert!(extract_download_url(&serde_json::Value::Null).is_none());
     }
 
     #[test]

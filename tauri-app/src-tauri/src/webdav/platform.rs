@@ -195,9 +195,25 @@ mod win {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    /// Gateway remote name for WNet. We hand mpr the http:// URL form, NOT the
+    /// legacy UNC `\\server@port\path` form: on current Win11 builds (26300+)
+    /// the WebClient's UNC-with-port path fails every connect with
+    /// ERROR_BAD_NET_NAME (67) — verified against a local minimal WebDAV
+    /// server — while the equivalent http:// URL mounts fine (and is the
+    /// documented WNet spelling for WebDAV on a custom port). WNet normalizes
+    /// it internally: WNetGetConnectionW then reports
+    /// `\\host@port\DavWWWRoot\m\{id}` for such drives.
     pub fn remote_name(port: u16, mount_id: &str) -> String {
-        // WebClient UNC form for non-SSL WebDAV: \\server@port\path
-        format!(r"\\127.0.0.1@{}\m\{}", port, mount_id)
+        format!("http://127.0.0.1:{}/m/{}", port, mount_id)
+    }
+
+    /// True when a WNet remote name belongs to the given mount. Handles both
+    /// spellings the redirector reports: the legacy UNC form
+    /// (`\\host@port\m\{id}`) and the normalized http-form one
+    /// (`\\host@port\DavWWWRoot\m\{id}`), either separator.
+    pub fn remote_is_mount(remote: &str, mount_id: &str) -> bool {
+        let normalized = remote.replace('/', r"\");
+        normalized.ends_with(&format!(r"\m\{}", mount_id))
     }
 
     pub fn letter_in_use(letter: &str) -> bool {
@@ -296,8 +312,10 @@ fn windows_mount(
     if err == 1219 {
         // ERROR_SESSION_CREDENTIAL_CONFLICT: a stale session to the same
         // server exists; force-cancel and retry once with our credentials.
-        let root = format!(r"\\127.0.0.1@{}", port);
-        let _ = win::cancel(&root);
+        // Cancel both spellings the session may be known under (legacy UNC
+        // root and the http origin we now map through).
+        let _ = win::cancel(&format!(r"\\127.0.0.1@{}", port));
+        let _ = win::cancel(&format!("http://127.0.0.1:{}", port));
         err = win::add_connection(&remote, username, password, Some(&letter));
     }
     match err {
@@ -335,7 +353,7 @@ fn windows_find_letter(mount_id: &str) -> Option<String> {
     for code in b'D'..=b'Z' {
         let letter = (code as char).to_string();
         if let Some(remote) = win::get_remote(&letter) {
-            if remote.ends_with(&format!(r"\m\{}", mount_id)) {
+            if win::remote_is_mount(&remote, mount_id) {
                 return Some(letter);
             }
         }
@@ -483,6 +501,31 @@ pub fn apply_fix() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_name_is_http_form() {
+        // The UNC \\host@port form regressed to ERROR_BAD_NET_NAME on current
+        // Win11 builds; mpr must be given the http:// spelling.
+        assert_eq!(win::remote_name(3980, "NSD1"), "http://127.0.0.1:3980/m/NSD1");
+    }
+
+    // Feature: webdav-mount, Property 7: drive-letter lookup recognizes every
+    // remote spelling WNet reports for our mounts, legacy or http-normalized.
+    #[test]
+    fn remote_match_accepts_all_redirector_spellings() {
+        // legacy UNC mapping (older builds / older app versions)
+        assert!(win::remote_is_mount(r"\\127.0.0.1@3980\m\NSD1", "NSD1"));
+        // http-form mapping, normalized by WNet with DavWWWRoot inserted
+        assert!(win::remote_is_mount(r"\\127.0.0.1@3980\DavWWWRoot\m\NSD1", "NSD1"));
+        // forward-slash spelling some paths report
+        assert!(win::remote_is_mount("//127.0.0.1@3980/DavWWWRoot/m/NSD1", "NSD1"));
+        // other mounts' drives and plain filesystem paths never match
+        assert!(!win::remote_is_mount(r"\\127.0.0.1@3980\DavWWWRoot\m\6a87bfd28f2f", "NSD1"));
+        assert!(!win::remote_is_mount(r"\\TSCLIENT\C", "NSD1"));
+        assert!(!win::remote_is_mount(r"C:\Users\hsiao", "NSD1"));
+        // a mount id must not match as a mere suffix of a longer id
+        assert!(!win::remote_is_mount(r"\\127.0.0.1@3980\m\NSD1extra", "NSD1"));
+    }
 
     #[test]
     fn diagnosis_serializes_with_issue_codes() {
