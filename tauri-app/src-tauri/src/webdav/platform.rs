@@ -522,7 +522,7 @@ mod tests {
         // other mounts' drives and plain filesystem paths never match
         assert!(!win::remote_is_mount(r"\\127.0.0.1@3980\DavWWWRoot\m\6a87bfd28f2f", "NSD1"));
         assert!(!win::remote_is_mount(r"\\TSCLIENT\C", "NSD1"));
-        assert!(!win::remote_is_mount(r"C:\Users\hsiao", "NSD1"));
+        assert!(!win::remote_is_mount(r"C:\Users\Public", "NSD1"));
         // a mount id must not match as a mere suffix of a longer id
         assert!(!win::remote_is_mount(r"\\127.0.0.1@3980\m\NSD1extra", "NSD1"));
     }
