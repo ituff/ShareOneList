@@ -79,6 +79,17 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data directory");
             let config_manager = ConfigManager::new(app_data_dir.clone());
+            // Cloud auto backup: every config/account save hands the payload
+            // to this sink, which uploads it to the chosen OneDrive folder.
+            let backup_handle = app.handle().clone();
+            config_manager.set_backup_sink(move |target, payload, trigger| {
+                config::cloud_backup::spawn_auto_backup_upload(
+                    backup_handle.clone(),
+                    target,
+                    payload,
+                    trigger,
+                );
+            });
             config_manager.migrate_legacy_accounts();
             let config = config_manager.load_config();
             let _ = config_manager.save_config(&config);
@@ -101,6 +112,14 @@ pub fn run() {
                 let mut auth = auth_state.lock().await;
                 let accounts = config_state.load_accounts();
                 auth.restore_sessions(accounts).await;
+                drop(auth);
+                // Startup auto backup: sessions are now available, so the
+                // cloud upload can actually get a token (the earlier
+                // save_config in setup ran before any of this was ready).
+                // Gated on dynamic content (chat/catalog) having changed.
+                config_state.write_auto_backup_with_trigger(
+                    config::cloud_backup::BackupTrigger::Startup,
+                );
             });
             app.manage(Mutex::new(DownloadEngine::new(
                 app.handle().clone(),
@@ -144,7 +163,10 @@ pub fn run() {
             config::commands::get_accounts,
             config::commands::export_config,
             config::commands::import_config,
-            config::commands::set_auto_backup_dir,
+            config::commands::inspect_backup,
+            config::commands::set_backup_password,
+            config::commands::get_backup_password_state,
+            config::commands::set_auto_backup_target,
             auth::commands::login,
             auth::commands::logout,
             auth::commands::update_account,
@@ -237,11 +259,38 @@ pub fn run() {
             webdav::commands::webdav_apply_fix,
             webdav::commands::webdav_copy_mount_info,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                run_exit_backup(app_handle);
+            }
+        });
 }
 
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to ShareOneList.", name)
+}
+
+/// Final cloud auto backup on app exit. Data that changed without touching
+/// config/accounts (chat messages, download tasks) is only captured here.
+/// Gated on dynamic content (chat history / catalog) having changed since
+/// the last upload; bounded by a shutdown timeout so a slow upload cannot
+/// trap the user.
+fn run_exit_backup(app_handle: &tauri::AppHandle) {
+    let config_state = app_handle.state::<ConfigManager>();
+    let config = config_state.load_config();
+    let Some(target) = config.auto_backup_target else {
+        return;
+    };
+    let Ok(payload) = config_state.build_backup_payload() else {
+        return;
+    };
+    config::cloud_backup::run_auto_backup_blocking(
+        app_handle.clone(),
+        target,
+        payload,
+        config::cloud_backup::BackupTrigger::Exit,
+    );
 }

@@ -4,8 +4,23 @@ import { create } from "zustand";
 export type SettingsTab = "appearance" | "general" | "downloads" | "ai" | "backup" | "mount" | "about";
 /** Update channel: stable releases only, or prereleases included. */
 export type UpdateChannel = "stable" | "beta";
-import type { AppConfig, ThemeMode, WindowState } from "../lib/types";
+import type {
+  AppConfig,
+  AutoBackupTarget,
+  BackupItem,
+  ThemeMode,
+  WindowState,
+} from "../lib/types";
 import { getConfig, saveConfig } from "../lib/tauri";
+
+/** Backup sections enabled by default (matches the Rust default). */
+export const defaultBackupItems: BackupItem[] = [
+  "tokens",
+  "llm_config",
+  "llm_keys",
+  "chat_history",
+  "webdav_mounts",
+];
 
 interface SettingsState {
   /** Current theme mode preference. */
@@ -20,8 +35,12 @@ interface SettingsState {
   segmentDownloadConcurrency: number;
   /** Update channel: "stable" or "beta" (prereleases included). */
   updateChannel: UpdateChannel;
-  /** Directory receiving automatic config backups; null disables. */
-  autoBackupDir: string | null;
+  /** Cloud OneDrive folder receiving automatic config backups; null disables.
+   * Changed only through `setAutoBackupTarget` in lib/tauri.ts (which also
+   * uploads the first backup) followed by `loadConfig()`. */
+  autoBackupTarget: AutoBackupTarget | null;
+  /** Optional data sections included in backups. */
+  autoBackupItems: BackupItem[];
   /** Closing the main window hides it to the tray instead of exiting. */
   closeToTray: boolean;
   /** Whether the initial config has been loaded from the backend. */
@@ -41,10 +60,10 @@ interface SettingsState {
   setSegmentDownloadConcurrency: (n: number) => void;
   /** Switch the update channel and persist to backend. */
   setUpdateChannel: (channel: UpdateChannel) => void;
-  /** Set the auto backup directory (null disables) and persist. */
-  setAutoBackupDir: (dir: string | null) => void;
   /** Toggle close-to-tray and persist to backend. */
   setCloseToTray: (value: boolean) => void;
+  /** Update which optional sections are backed up, and persist. */
+  setAutoBackupItems: (items: BackupItem[]) => void;
   /** Active sub-tab in the settings page. */
   settingsTab: SettingsTab;
   setSettingsTab: (tab: SettingsTab) => void;
@@ -72,7 +91,8 @@ function persistCurrent(state: SettingsState): void {
     lastDownloadPath: state.lastDownloadPath,
     segmentDownloadConcurrency: state.segmentDownloadConcurrency,
     updateChannel: state.updateChannel,
-    autoBackupDir: state.autoBackupDir,
+    autoBackupTarget: state.autoBackupTarget,
+    autoBackupItems: state.autoBackupItems,
     closeToTray: state.closeToTray,
   };
   saveConfig(config).catch((err) => {
@@ -87,7 +107,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastDownloadPath: null,
   segmentDownloadConcurrency: 4,
   updateChannel: "stable",
-  autoBackupDir: null,
+  autoBackupTarget: null,
+  autoBackupItems: defaultBackupItems,
   closeToTray: false,
   isLoaded: false,
   settingsTab: "appearance",
@@ -103,7 +124,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         segmentDownloadConcurrency: config.segmentDownloadConcurrency ?? 4,
         updateChannel:
           config.updateChannel === "beta" ? "beta" : "stable",
-        autoBackupDir: config.autoBackupDir ?? null,
+        autoBackupTarget: config.autoBackupTarget ?? null,
+        autoBackupItems:
+          config.autoBackupItems && config.autoBackupItems.length > 0
+            ? config.autoBackupItems
+            : [],
         closeToTray: config.closeToTray ?? false,
         isLoaded: true,
       });
@@ -145,13 +170,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistCurrent(get());
   },
 
-  setAutoBackupDir: (dir) => {
-    set({ autoBackupDir: dir });
+  setCloseToTray: (value) => {
+    set({ closeToTray: value });
     persistCurrent(get());
   },
 
-  setCloseToTray: (value) => {
-    set({ closeToTray: value });
+  setAutoBackupItems: (items) => {
+    set({ autoBackupItems: items });
     persistCurrent(get());
   },
 

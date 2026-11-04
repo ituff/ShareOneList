@@ -307,7 +307,7 @@ pub async fn download_files(
             let drive_id = drive_for_hash.clone();
             async move { fetch_quick_xor_hash(&client, &token, &drive_id, &item_id).await }
         })
-        .buffer_unordered(6)
+        .buffered(6)  // ordered: results are zipped positionally with the file list
         .collect()
         .await;
 
@@ -586,7 +586,7 @@ pub async fn redownload_files(
                     .unwrap_or_default();
                 async move { fetch_quick_xor_hash(&client, &token, &drive_id, &item_id).await }
             })
-            .buffer_unordered(6)
+            .buffered(6)  // ordered: results are zipped positionally with the file list
             .collect()
             .await;
         let by_item: std::collections::HashMap<String, Option<String>> = keys

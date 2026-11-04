@@ -328,8 +328,10 @@ async fn simple_upload(
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
+    // conflictBehavior must be a query parameter on simple uploads; `@` is
+    // not a legal header character, so a header form never leaves reqwest.
     let url = format!(
-        "{}/drives/{}/items/{}:/{}:/content",
+        "{}/drives/{}/items/{}:/{}:/content?@microsoft.graph.conflictBehavior=rename",
         base_url, drive_id, parent_id, file_name
     );
 
@@ -337,7 +339,6 @@ async fn simple_upload(
         .put(&url)
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/octet-stream")
-        .header("@microsoft.graph.conflictBehavior", "rename")
         .body(file_content)
         .send()
         .await

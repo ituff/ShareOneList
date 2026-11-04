@@ -9,8 +9,7 @@
     "askai": "KI fragen",
     "search": "Suche",
     "collapse": "Seitenleiste einklappen",
-    "expand": "Seitenleiste ausklappen",
-    "sitemap": "Site-Map"
+    "expand": "Seitenleiste ausklappen"
   },
   "home": {
     "title": "ShareOneList",
@@ -172,6 +171,10 @@
       "download-assistant": {
         "title": "Download-Assistent",
         "description": "OneDrive-/SharePoint-Links analysieren und Downloads an Aria2 / Motrix / IDM übergeben."
+      },
+      "sitemap": {
+        "title": "Site-Map",
+        "description": "Ihre Cloud-Map wächst automatisch durch Browsen und Suchen. Nur lokal gespeichert; jederzeit löschbar."
       }
     },
     "backToMenu": "Werkzeugmenü"

@@ -1,20 +1,37 @@
 // Config module: persistent configuration and account storage
 // Uses platform-appropriate app data directories
 
+pub mod backup_crypto;
+pub mod backup_snapshot;
+pub mod cloud_backup;
 pub mod commands;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use chrono::Utc;
 
 use crate::auth::cloud_config::CloudEnvironment;
-use crate::models::{AccountEntry, AppConfig};
+use crate::models::{AccountEntry, AppConfig, AutoBackupTarget};
 
 const CONFIG_FILE_NAME: &str = "config.json";
 const ACCOUNTS_FILE_NAME: &str = "accounts.json";
 const LEGACY_MIGRATION_MARKER: &str = ".legacy-drives-migrated";
-const AUTO_BACKUP_FILE_NAME: &str = "ShareOneList-backup.json";
+
+/// Receives `(target, payload, trigger)` for every auto backup trigger. The
+/// app installs one at setup that uploads to OneDrive; unit tests either
+/// install a recording sink or none at all. Keeping this a plain callback
+/// keeps the config layer free of the Tauri runtime (and the test binary
+/// free of its GUI imports).
+type BackupSink = Box<
+    dyn Fn(
+            AutoBackupTarget,
+            serde_json::Value,
+            crate::config::cloud_backup::BackupTrigger,
+        ) + Send
+        + Sync,
+>;
 
 /// Legacy WinUI `cache/drives.json` shape.
 #[derive(Debug, serde::Deserialize)]
@@ -44,6 +61,9 @@ pub struct ConfigManager {
     config_path: PathBuf,
     accounts_path: PathBuf,
     legacy_migration_marker: PathBuf,
+    /// Cloud auto backup sink, installed during app setup. Backups triggered
+    /// before that (or in unit tests without a sink) are skipped.
+    backup_sink: OnceLock<BackupSink>,
 }
 
 impl ConfigManager {
@@ -56,7 +76,23 @@ impl ConfigManager {
             config_path: base_path.join(CONFIG_FILE_NAME),
             accounts_path: base_path.join(ACCOUNTS_FILE_NAME),
             legacy_migration_marker: base_path.join(LEGACY_MIGRATION_MARKER),
+            backup_sink: OnceLock::new(),
         }
+    }
+
+    /// Install the callback that receives every auto backup trigger. Only the
+    /// first installation takes effect.
+    pub fn set_backup_sink(
+        &self,
+        sink: impl Fn(
+                AutoBackupTarget,
+                serde_json::Value,
+                crate::config::cloud_backup::BackupTrigger,
+            ) + Send
+            + Sync
+            + 'static,
+    ) {
+        let _ = self.backup_sink.set(Box::new(sink));
     }
 
     /// One-time migration from the old WinUI `cache/drives.json` into the new account list.
@@ -222,12 +258,15 @@ impl ConfigManager {
         Ok(())
     }
 
-    /// Build the export/auto-backup payload: settings + accounts (no
-    /// credentials — refresh tokens never leave the OS keyring).
-    fn build_backup_payload(&self) -> Result<serde_json::Value, ConfigError> {
+    /// Build the base export/auto-backup payload: settings + accounts.
+    /// Version-2 payloads additionally carry `items` (which optional
+    /// sections are included) and `enc` (those sections, encrypted) — both
+    /// are attached by `backup_snapshot::assemble_backup_payload`, which
+    /// needs the AppHandle to reach the other modules' state.
+    pub fn build_backup_payload(&self) -> Result<serde_json::Value, ConfigError> {
         let payload = serde_json::json!({
             "kind": "ShareOneList-backup",
-            "backupVersion": 1,
+            "backupVersion": 2,
             "exportedAt": Utc::now().to_rfc3339(),
             "config": self.load_config(),
             "accounts": self.load_accounts(),
@@ -236,7 +275,11 @@ impl ConfigManager {
     }
 
     /// Write the backup payload to `path` as pretty JSON (atomically).
-    fn write_payload(&self, path: &Path, payload: &serde_json::Value) -> Result<(), ConfigError> {
+    pub(crate) fn write_payload(
+        &self,
+        path: &Path,
+        payload: &serde_json::Value,
+    ) -> Result<(), ConfigError> {
         self.ensure_dir_exists(path)?;
         let tmp = path.with_extension("json.tmp");
         let json = serde_json::to_string_pretty(payload)
@@ -252,12 +295,10 @@ impl ConfigManager {
         self.write_payload(path, &payload)
     }
 
-    /// Import settings + accounts from a backup file. Overwrites the current
-    /// config and account list and returns what was imported.
-    pub fn import_bundle(
-        &self,
-        path: &Path,
-    ) -> Result<(AppConfig, Vec<AccountEntry>, usize), ConfigError> {
+    /// Read and validate a backup file, returning the full payload. The
+    /// optional sections (`enc`) are handled by the import command; this
+    /// only checks the `kind` marker.
+    pub fn read_backup_payload(&self, path: &Path) -> Result<serde_json::Value, ConfigError> {
         let content = fs::read_to_string(path).map_err(|e| ConfigError::Io(e.to_string()))?;
         let payload: serde_json::Value =
             serde_json::from_str(&content).map_err(|e| ConfigError::Serialize(e.to_string()))?;
@@ -266,7 +307,17 @@ impl ConfigManager {
                 "not a ShareOneList backup file".to_string(),
             ));
         }
+        Ok(payload)
+    }
 
+    /// Apply the base part of a backup payload: overwrite the current config
+    /// and account list. (Optional sections are restored by the import
+    /// command BEFORE this runs, so a section failure aborts the import
+    /// while nothing persistent has changed.)
+    pub fn apply_base_import(
+        &self,
+        payload: &serde_json::Value,
+    ) -> Result<(AppConfig, Vec<AccountEntry>, usize), ConfigError> {
         let config: AppConfig = serde_json::from_value(
             payload
                 .get("config")
@@ -288,25 +339,45 @@ impl ConfigManager {
         Ok((config, accounts, count))
     }
 
-    /// Writes the backup payload into the user-configured auto backup
-    /// directory (typically a OneDrive sync folder). No-op when the
-    /// directory is not configured.
+    /// Import settings + accounts from a backup file. Overwrites the current
+    /// config and account list and returns what was imported. (Version-1
+    /// path; the import command handles optional sections before calling
+    /// this via `apply_base_import`.)
+    pub fn import_bundle(
+        &self,
+        path: &Path,
+    ) -> Result<(AppConfig, Vec<AccountEntry>, usize), ConfigError> {
+        let payload = self.read_backup_payload(path)?;
+        self.apply_base_import(&payload)
+    }
+
+    /// Hands the backup payload to the installed sink, which uploads it into
+    /// the user-configured cloud OneDrive folder (fire-and-forget). No-op
+    /// when no target is configured or no sink is installed yet.
     pub fn write_auto_backup(&self) {
-        let Some(dir) = self
-            .load_config()
-            .auto_backup_dir
-            .filter(|d| !d.trim().is_empty())
-        else {
+        self.write_auto_backup_with_trigger(crate::config::cloud_backup::BackupTrigger::Change);
+    }
+
+    /// Same as [`write_auto_backup`] with an explicit trigger. The startup
+    /// and exit triggers are gated on dynamic content (chat history /
+    /// catalog) having changed — see `cloud_backup::BackupTrigger`.
+    pub fn write_auto_backup_with_trigger(
+        &self,
+        trigger: crate::config::cloud_backup::BackupTrigger,
+    ) {
+        let Some(target) = self.load_config().auto_backup_target else {
+            return;
+        };
+        if target.drive_id.is_empty() || target.folder_id.is_empty() {
+            return;
+        }
+        let Some(sink) = self.backup_sink.get() else {
+            // Early startup (first save_config in setup) — the post-restore
+            // hook re-runs the backup once sessions are available.
             return;
         };
         match self.build_backup_payload() {
-            Ok(payload) => {
-                if let Err(e) =
-                    self.write_payload(&PathBuf::from(dir).join(AUTO_BACKUP_FILE_NAME), &payload)
-                {
-                    eprintln!("[config] auto backup failed: {}", e);
-                }
-            }
+            Ok(payload) => sink(target, payload, trigger),
             Err(e) => eprintln!("[config] auto backup payload failed: {}", e),
         }
     }
@@ -324,7 +395,8 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AccountCategory, ThemeMode, WindowState};
+    use crate::config::cloud_backup::BackupTrigger;
+    use crate::models::{AccountCategory, AutoBackupTarget, ThemeMode, WindowState};
     use tempfile::TempDir;
 
     fn make_manager(dir: &TempDir) -> ConfigManager {
@@ -370,7 +442,8 @@ mod tests {
             last_download_path: Some("C:/Downloads".to_string()),
             segment_download_concurrency: 8,
             update_channel: "stable".to_string(),
-            auto_backup_dir: None,
+            auto_backup_target: None,
+            auto_backup_items: Vec::new(),
             close_to_tray: false,
         };
 
@@ -513,7 +586,8 @@ mod tests {
             last_download_path: None,
             segment_download_concurrency: 8,
             update_channel: "beta".to_string(),
-            auto_backup_dir: None,
+            auto_backup_target: None,
+            auto_backup_items: Vec::new(),
             close_to_tray: false,
         })
         .unwrap();
@@ -548,45 +622,103 @@ mod tests {
     }
 
     #[test]
-    fn auto_backup_writes_payload_when_dir_configured() {
+    fn auto_backup_target_round_trips_through_config() {
         let dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
         let mgr = make_manager(&dir);
-        let backup_path = backup_dir.path().join("ShareOneList-backup.json");
 
-        // No backup dir configured yet: nothing written.
-        mgr.save_accounts(&[]).unwrap();
-        assert!(!backup_path.exists());
-
-        // Configure the auto backup dir (through the normal save path) and
-        // change accounts again — the backup must appear.
+        let target = AutoBackupTarget {
+            home_account_id: "acc-1".to_string(),
+            cloud_env: CloudEnvironment::China,
+            drive_id: "drive-1".to_string(),
+            folder_id: "folder-9".to_string(),
+            folder_path: "/Apps/ShareOneList".to_string(),
+        };
         let mut config = mgr.load_config();
-        config.auto_backup_dir = Some(backup_dir.path().to_string_lossy().to_string());
+        config.auto_backup_target = Some(target.clone());
         mgr.save_config(&config).unwrap();
-        assert!(backup_path.exists(), "config save should trigger auto backup");
 
-        mgr.save_accounts(&[]).unwrap();
-        let payload: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
-        assert_eq!(
-            payload.get("kind").and_then(|v| v.as_str()),
-            Some("ShareOneList-backup")
-        );
-        assert!(payload.get("config").is_some());
-        assert!(payload.get("accounts").is_some());
+        let loaded = mgr.load_config();
+        assert_eq!(loaded.auto_backup_target, Some(target));
     }
 
     #[test]
-    fn auto_backup_skipped_when_dir_empty() {
+    fn legacy_auto_backup_dir_key_is_ignored() {
         let dir = TempDir::new().unwrap();
-        let backup_dir = TempDir::new().unwrap();
         let mgr = make_manager(&dir);
-        let backup_path = backup_dir.path().join("ShareOneList-backup.json");
+        // Config files written by versions that used a local OneDrive sync
+        // folder carry `autoBackupDir`; it must not be resurrected.
+        fs::write(
+            mgr.config_path.clone(),
+            r#"{"theme":"system","language":"zh-CN","window":{"x":0,"y":0,"width":1280,"height":720,"isMaximized":false},"autoBackupDir":"C:/OneDrive"}"#,
+        )
+        .unwrap();
 
+        let loaded = mgr.load_config();
+        assert_eq!(loaded.auto_backup_target, None);
+    }
+
+    #[test]
+    fn auto_backup_skipped_without_target_or_sink() {
+        let dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+
+        // No target configured: no-op.
+        mgr.write_auto_backup();
+
+        // Target configured but no sink installed (unit-test manager): no-op,
+        // must not panic — uploads only happen through the installed sink.
         let mut config = mgr.load_config();
-        config.auto_backup_dir = Some("   ".to_string());
+        config.auto_backup_target = Some(AutoBackupTarget {
+            home_account_id: "acc-1".to_string(),
+            cloud_env: CloudEnvironment::Global,
+            drive_id: "drive-1".to_string(),
+            folder_id: "folder-1".to_string(),
+            folder_path: "/backups".to_string(),
+        });
         mgr.save_config(&config).unwrap();
+        mgr.write_auto_backup();
+    }
 
-        assert!(!backup_path.exists());
+    #[test]
+    fn auto_backup_forwards_target_and_payload_to_sink() {
+        use std::sync::{Arc, Mutex};
+
+        let dir = TempDir::new().unwrap();
+        let mgr = make_manager(&dir);
+        let received: Arc<Mutex<Vec<(AutoBackupTarget, serde_json::Value, BackupTrigger)>>> =
+            Arc::new(Mutex::new(Vec::new()));
+        let sink_recv = Arc::clone(&received);
+        mgr.set_backup_sink(move |target, payload, trigger| {
+            sink_recv.lock().unwrap().push((target, payload, trigger));
+        });
+
+        // No target yet: saves must not reach the sink.
+        mgr.save_accounts(&[]).unwrap();
+        assert!(received.lock().unwrap().is_empty());
+
+        // Configure the target (through the normal save path): the config
+        // save itself triggers one backup, the following account save another.
+        let target = AutoBackupTarget {
+            home_account_id: "acc-1".to_string(),
+            cloud_env: CloudEnvironment::China,
+            drive_id: "drive-1".to_string(),
+            folder_id: "folder-9".to_string(),
+            folder_path: "/Apps/ShareOneList".to_string(),
+        };
+        let mut config = mgr.load_config();
+        config.auto_backup_target = Some(target.clone());
+        mgr.save_config(&config).unwrap();
+        mgr.save_accounts(&[]).unwrap();
+
+        let calls = received.lock().unwrap();
+        assert_eq!(calls.len(), 2, "config save + accounts save should each trigger");
+        assert_eq!(calls[0].0, target);
+        assert_eq!(calls[0].2, BackupTrigger::Change);
+        assert_eq!(
+            calls[0].1.get("kind").and_then(|v| v.as_str()),
+            Some("ShareOneList-backup")
+        );
+        assert!(calls[1].1.get("config").is_some());
+        assert!(calls[1].1.get("accounts").is_some());
     }
 }

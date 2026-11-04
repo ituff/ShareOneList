@@ -9,6 +9,8 @@ import type {
   AccountEntry,
   AccountInfo,
   AppConfig,
+  AutoBackupTarget,
+  BackupItem,
   BatchInfo,
   BatchSnapshot,
   CloudEnvironment,
@@ -616,7 +618,8 @@ export function getAccounts(): Promise<AccountEntry[]> {
 // ─── Config Backup & Restore ────────────────────────────────────────────
 
 /**
- * Export settings + accounts (no credentials) to a backup file.
+ * Export settings + accounts plus the selected optional sections (encrypted
+ * where secret-bearing) to a backup file. Mirrors the automatic cloud backup.
  */
 export function exportConfig(path: string): Promise<void> {
   return invoke<void>("export_config", { path });
@@ -626,22 +629,61 @@ export interface ImportSummary {
   config: AppConfig;
   accounts: AccountEntry[];
   accountsCount: number;
+  /** Optional sections actually restored from the file. */
+  itemsRestored: BackupItem[];
+}
+
+/** Header info of a backup file, from `inspectBackup`. */
+export interface BackupInspectInfo {
+  backupVersion: number;
+  exportedAt: string;
+  items: BackupItem[];
+  encrypted: boolean;
 }
 
 /**
- * Import settings + accounts from a backup file, overwriting the current
- * values. Returns the imported summary so stores can refresh.
+ * Read a backup file's header: version, export time, which optional
+ * sections it carries and whether they are encrypted.
  */
-export function importConfig(path: string): Promise<ImportSummary> {
-  return invoke<ImportSummary>("import_config", { path });
+export function inspectBackup(path: string): Promise<BackupInspectInfo> {
+  return invoke<BackupInspectInfo>("inspect_backup", { path });
 }
 
 /**
- * Set the auto backup directory (null disables). An immediate backup is
- * written when a directory is set.
+ * Import a backup file, restoring the requested optional sections
+ * (defaults to every section present) and overwriting config + accounts.
+ * Encrypted sections require the backup password.
  */
-export function setAutoBackupDir(dir: string | null): Promise<void> {
-  return invoke<void>("set_auto_backup_dir", { dir });
+export function importConfig(
+  path: string,
+  password?: string | null,
+  items?: BackupItem[] | null
+): Promise<ImportSummary> {
+  return invoke<ImportSummary>("import_config", {
+    path,
+    password: password ?? null,
+    items: items ?? null,
+  });
+}
+
+/** Set (or replace) the backup password used to encrypt secret sections. */
+export function setBackupPassword(password: string): Promise<void> {
+  return invoke<void>("set_backup_password", { password });
+}
+
+/** Whether a backup password has been set on this machine. */
+export function getBackupPasswordState(): Promise<{ isSet: boolean }> {
+  return invoke<{ isSet: boolean }>("get_backup_password_state");
+}
+
+/**
+ * Set the cloud auto backup target (null disables). When a target is set,
+ * the first backup is uploaded immediately and any failure is thrown.
+ */
+export function setAutoBackupTarget(
+  target: AutoBackupTarget | null
+): Promise<void> {
+  return invoke<void>("set_auto_backup_target", { target });
 }
 
 // ─── Application Update ─────────────────────────────────────────────────────

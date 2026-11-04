@@ -48,6 +48,9 @@ percent-encoding = "2"
 bytes = "1"
 futures-util = "0.3"
 quickxorhash = "0.1.0"
+# Encrypted backup: AES-256-GCM payload encryption, Argon2id password KDF
+aes-gcm = "0.10"
+argon2 = "0.5"
 
 [dev-dependencies]
 tempfile = "3"

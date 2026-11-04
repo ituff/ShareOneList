@@ -62,6 +62,15 @@ pub fn env_str(env: &CloudEnvironment) -> &'static str {
     }
 }
 
+/// Portable snapshot of the catalog registry: drive rows and directory node
+/// rows as JSON objects keyed by camelCase column names. Rows are stored
+/// schema-tolerantly so a newer schema's extra columns are simply dropped.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CatalogSnapshot {
+    pub drives: Vec<serde_json::Value>,
+    pub nodes: Vec<serde_json::Value>,
+}
+
 impl CatalogStore {
     pub fn new(base_path: PathBuf) -> Self {
         Self {
@@ -482,6 +491,170 @@ impl CatalogStore {
             })
     }
 
+    // ── Backup snapshot ─────────────────────────────────────────────────────
+
+    /// Export the drives registry and directory nodes (including each
+    /// drive's stored node_count). The FTS index and usage ledger are
+    /// intentionally excluded — FTS is maintained by triggers, usage is
+    /// analytics. Restore refreshes node counts from the imported drives.
+    pub fn export_all(&self) -> Result<CatalogSnapshot, AppError> {
+        let conn = self.open()?;
+        let mut drives = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT account_id, cloud_env, drive_id, kind, name, site_name, status,
+                            node_count, last_used_at
+                     FROM drives ORDER BY account_id, drive_id",
+                )
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "accountId": row.get::<_, String>(0)?,
+                        "cloudEnv": row.get::<_, String>(1)?,
+                        "driveId": row.get::<_, String>(2)?,
+                        "kind": row.get::<_, String>(3)?,
+                        "name": row.get::<_, String>(4)?,
+                        "siteName": row.get::<_, String>(5)?,
+                        "status": row.get::<_, String>(6)?,
+                        "nodeCount": row.get::<_, i64>(7)?,
+                        "lastUsedAt": row.get::<_, i64>(8)?,
+                    }))
+                })
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            for row in rows {
+                drives.push(row.map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?);
+            }
+        }
+
+        let mut nodes = Vec::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT account_id, drive_id, item_id, path, name, kind, desc, parent_path,
+                            last_visited, visit_count
+                     FROM nodes ORDER BY account_id, drive_id, path",
+                )
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(serde_json::json!({
+                        "accountId": row.get::<_, String>(0)?,
+                        "driveId": row.get::<_, String>(1)?,
+                        "itemId": row.get::<_, String>(2)?,
+                        "path": row.get::<_, String>(3)?,
+                        "name": row.get::<_, String>(4)?,
+                        "kind": row.get::<_, String>(5)?,
+                        "desc": row.get::<_, String>(6)?,
+                        "parentPath": row.get::<_, String>(7)?,
+                        "lastVisited": row.get::<_, i64>(8)?,
+                        "visitCount": row.get::<_, i64>(9)?,
+                    }))
+                })
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            for row in rows {
+                nodes.push(row.map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?);
+            }
+        }
+
+        Ok(CatalogSnapshot { drives, nodes })
+    }
+
+    /// Replace drives + nodes with the snapshot in a single transaction.
+    /// FTS entries are maintained automatically by the insert triggers.
+    pub fn import_all(&self, snapshot: &CatalogSnapshot) -> Result<(), AppError> {
+        let mut conn = self.open()?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        let tx = conn.transaction().map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+        tx.execute("DELETE FROM nodes", [])
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        tx.execute("DELETE FROM drives", [])
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO drives (account_id, cloud_env, drive_id, kind, name, site_name,
+                                         status, node_count, last_used_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                )
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            for d in &snapshot.drives {
+                stmt.execute(params![
+                    d["accountId"].as_str().unwrap_or_default(),
+                    d["cloudEnv"].as_str().unwrap_or_default(),
+                    d["driveId"].as_str().unwrap_or_default(),
+                    d["kind"].as_str().unwrap_or_default(),
+                    d["name"].as_str().unwrap_or_default(),
+                    d["siteName"].as_str().unwrap_or_default(),
+                    d["status"].as_str().unwrap_or("queued"),
+                    d["nodeCount"].as_i64().unwrap_or(0),
+                    d["lastUsedAt"].as_i64().unwrap_or(0),
+                ])
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            }
+        }
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO nodes (account_id, drive_id, item_id, path, name, kind, desc,
+                                        parent_path, last_visited, visit_count)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                )
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            for n in &snapshot.nodes {
+                stmt.execute(params![
+                    n["accountId"].as_str().unwrap_or_default(),
+                    n["driveId"].as_str().unwrap_or_default(),
+                    n["itemId"].as_str().unwrap_or_default(),
+                    n["path"].as_str().unwrap_or_default(),
+                    n["name"].as_str().unwrap_or_default(),
+                    n["kind"].as_str().unwrap_or_default(),
+                    n["desc"].as_str().unwrap_or_default(),
+                    n["parentPath"].as_str().unwrap_or_default(),
+                    n["lastVisited"].as_i64().unwrap_or(0),
+                    n["visitCount"].as_i64().unwrap_or(0),
+                ])
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+            }
+        }
+
+        tx.commit().map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+        Ok(())
+    }
+
     // ── Usage ledger ────────────────────────────────────────────────────────
 
     pub fn record_usage(
@@ -714,6 +887,59 @@ mod tests {
         store.open().unwrap();
         store.open().unwrap();
         assert!(store.list_drives().unwrap().is_empty());
+    }
+
+    #[test]
+    fn catalog_snapshot_round_trip_restores_rows_and_fts() {
+        let dir = TempDir::new().unwrap();
+        let store = make_store(&dir);
+        store
+            .register_drive("acc1", &CloudEnvironment::Global, "drv1", "onedrive", "OD", "Site A")
+            .unwrap();
+        store
+            .upsert_nodes(
+                "acc1",
+                "drv1",
+                &[node("R&D/notes.md", "notes.md", "file"), node("R&D", "R&D", "folder")],
+                2,
+            )
+            .unwrap();
+
+        let snapshot = store.export_all().unwrap();
+        assert_eq!(snapshot.drives.len(), 1);
+        assert_eq!(snapshot.nodes.len(), 2);
+
+        // Restore into a fresh location (simulates another machine).
+        let target_dir = TempDir::new().unwrap();
+        let target = make_store(&target_dir);
+        target.import_all(&snapshot).unwrap();
+
+        assert_eq!(target.list_drives().unwrap().len(), 1);
+        let children = target
+            .children_of("acc1", "drv1", "")
+            .unwrap();
+        assert_eq!(children.len(), 1, "only the folder is a root-level child");
+        assert_eq!(children[0].name, "R&D");
+
+        // FTS must be repopulated by the insert triggers so search keeps
+        // working after restore.
+        let conn = target.open().unwrap();
+        let hits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM node_fts WHERE node_fts MATCH '\"notes\"'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hits, 1);
+        let node_count: i64 = conn
+            .query_row(
+                "SELECT node_count FROM drives WHERE account_id='acc1' AND drive_id='drv1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(node_count, 2, "drive node_count travels with the snapshot");
     }
 
     #[test]

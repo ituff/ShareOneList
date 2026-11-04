@@ -30,10 +30,22 @@ Built with Tauri 2 + Rust + React: small installer, fast startup, low memory foo
 - Chat history is stored locally: conversations survive restarts with full multi-turn context
 - **AI memory**: capture your preferences with `#remember` / `#forget`; they apply to future chats and are disclosed inside answers
 
-### 🎬 Teams meeting recordings
+### 🎬 Teams meeting recordings & AI minutes
 
 - Aggregates recordings scattered across OneDrive, SharePoint sites, and Microsoft Search
 - Play in the built-in player, download in one click; recordings locked by download policy can still be saved as MP4 with the **streaming extractor** (see the [wiki](https://github.com/ituff/ShareOneList/wiki))
+- **AI meeting minutes**: one click on the recording preview generates a structured summary (overview / discussion points / decisions / action items / open questions) from the meeting transcript with your default LLM — streamed live and exportable as a Word (.docx) document
+- **Transcript export**: save the Teams transcript as a .txt file — works for recordings shared by others, too
+
+![](./ScreenShots/MeetingActions.png)
+
+### 🧩 Cloud drives as real disks
+
+- Mount OneDrive / SharePoint document libraries as **Windows drive letters or macOS Finder volumes** through a built-in local WebDAV gateway — no third-party driver, mounts appear right in Explorer / Finder
+- Multiple accounts and mount points: scope each mount to My OneDrive, a site document library, or a subfolder; custom gateway path names and (on Windows) drive letters; mounts restore automatically on the next launch
+- Windows diagnostics with one-click repair (WebClient service, Basic auth policy, 50 MB per-file limit); macOS mounts go through the system NetFS interface with clear error messages
+
+![](./ScreenShots/WebDavMount.png)
 
 ### ☁️ Three flavors of Microsoft 365, one app
 
@@ -48,14 +60,29 @@ Built with Tauri 2 + Rust + React: small installer, fast startup, low memory foo
 
 ### 🚀 A download engine built for big files
 
-- Resumable downloads: pick up after interruptions and app restarts
+- Resumable downloads: pick up after interruptions and app restarts — even failed batches resume from their chunk progress
+- Verifiable integrity: files land as `.tmp` first (invisible to the OneDrive sync client), pass a size + QuickXorHash check, and only then take their final name; the **Verify files** button re-checks any finished batch against the cloud, and one click re-downloads anything that doesn't match
+- Real per-file error messages, retryable/transient errors handled automatically, and a background-friendly progress pill
 - Batch downloads: select many files, get one task with clear progress and speed
 - Mirror acceleration: automatic fallback across download mirrors, streamed to disk with live progress
 
+![](./ScreenShots/TaskVerify.png)
+
 ### 🔄 Config backup & restore
 
-- One-click export / import of a backup with all settings and accounts (no login credentials) — migration and reinstall in one step
-- Auto backup: point it at a OneDrive-synced folder and every setting or account change writes the latest backup, synced to the cloud by OneDrive
+- One-click export / import of a backup with all settings and accounts — migration and reinstall in one step
+- Backup contents are selectable: sign-in credentials, AI provider config & keys, chat history & memories, Drive Catalog, WebDAV mounts, download task list — secret-bearing sections are AES-256-GCM encrypted with your own backup password
+- Auto backup: pick an account and a folder in its OneDrive — every settings or account change uploads the latest backup automatically, and startup/exit backups kick in only when chat history or the catalog map is selected and has changed
+
+![](./ScreenShots/CloudBackup.png)
+
+### 📌 Tray resident & background friendly
+
+- Optional **close-to-tray**: closing the window keeps mounts and background tasks alive; reopen or quit from the tray icon (quit unmounts drives cleanly)
+- Exit protection: with drives mounted, closing the app asks first — stay in tray or unmount everything and quit; taskbar "Close window" can't bypass it
+- Optional launch-at-startup, both in **Settings → General**
+
+![](./ScreenShots/TrayGeneral.png)
 
 ### And more
 

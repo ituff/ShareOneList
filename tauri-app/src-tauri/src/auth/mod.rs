@@ -778,7 +778,7 @@ fn delete_entry_if_exists(service: &'static str, name: &str) {
 /// Stores a refresh token in the platform keyring as size-safe segments.
 /// Cleans up the legacy single-entry format and stale trailing segments so
 /// repeated logins never leave orphaned data behind.
-fn store_refresh_token(
+pub(crate) fn store_refresh_token(
     cloud_env: &CloudEnvironment,
     home_account_id: &str,
     token: &str,
@@ -813,7 +813,7 @@ fn store_refresh_token(
 
 /// Loads a refresh token from the platform keyring. Prefers the segmented
 /// format and falls back to the legacy single entry written by older builds.
-fn load_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Option<String> {
+pub(crate) fn load_refresh_token(cloud_env: &CloudEnvironment, home_account_id: &str) -> Option<String> {
     let mut assembled = String::new();
     for index in 0..64usize {
         match keyring::Entry::new(KEYRING_SERVICE, &segment_key(cloud_env, home_account_id, index))

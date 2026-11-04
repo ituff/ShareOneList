@@ -391,3 +391,6 @@ AGENTS.local.md
 /ScreenShots/CatalogSitemap.png
 /ScreenShots/LlmProviders.png
 /ScreenShots/公众号二维码.png
+
+# ZCode session artifacts (local agent tooling)
+.zcode/

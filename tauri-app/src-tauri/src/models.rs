@@ -147,10 +147,16 @@ pub struct AppConfig {
     /// Update channel: "stable" (default) or "beta" (prereleases included).
     #[serde(default)]
     pub update_channel: String,
-    /// Directory receiving automatic config backups (typically a OneDrive
-    /// sync folder). `None` disables auto backup.
+    /// Cloud OneDrive folder receiving automatic config backups.
+    /// `None` disables auto backup. The legacy `autoBackupDir` local-path
+    /// key is intentionally dropped (serde ignores unknown fields).
     #[serde(default)]
-    pub auto_backup_dir: Option<String>,
+    pub auto_backup_target: Option<AutoBackupTarget>,
+    /// Which optional data sections are included in backups. Applies to
+    /// both manual export and the automatic cloud backup. Sections that
+    /// hold secrets are always encrypted inside the backup payload.
+    #[serde(default = "default_backup_items")]
+    pub auto_backup_items: Vec<BackupItem>,
     /// When set, closing the main window hides it to the tray (the app and
     /// the WebDAV gateway keep running) instead of exiting.
     #[serde(default)]
@@ -273,6 +279,56 @@ pub struct UpdateInfo {
 // with CloudEnvironment and its config() method.
 pub use crate::auth::cloud_config::CloudConfig;
 
+/// Cloud OneDrive folder that receives automatic config backups. The user
+/// picks the owning account first, then browses (or creates) a folder inside
+/// that account's OneDrive; backups are uploaded there via Graph API.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoBackupTarget {
+    /// Signed-in identity owning the target OneDrive.
+    pub home_account_id: String,
+    /// Which cloud the account lives in (token and Graph base URL selection).
+    pub cloud_env: CloudEnvironment,
+    /// The account's OneDrive drive id (resolved at login).
+    pub drive_id: String,
+    /// Id of the chosen destination folder.
+    pub folder_id: String,
+    /// Display path of the chosen folder (e.g. "/Apps/ShareOneList").
+    pub folder_path: String,
+}
+
+/// One optional data section a backup can include. Secret-bearing sections
+/// are encrypted inside the payload (AES-256-GCM, password-derived key).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupItem {
+    /// Microsoft refresh tokens (OS keyring) — restores accounts without
+    /// re-login. Access tokens are never backed up (they expire hourly).
+    Tokens,
+    /// AI assistant model provider configuration (llm.json, no keys).
+    LlmConfig,
+    /// AI provider API keys (OS keyring, `llm_api_key_*`).
+    LlmKeys,
+    /// Chat conversations and user memories (chat_history.db).
+    ChatHistory,
+    /// Drive Catalog directory map (catalog.db, derived data).
+    Catalog,
+    /// WebDAV mount definitions incl. gateway password (webdav-mounts.json).
+    WebdavMounts,
+    /// Download task/batch metadata JSON (no file bytes, no .tmp staging).
+    DownloadTasks,
+}
+
+fn default_backup_items() -> Vec<BackupItem> {
+    vec![
+        BackupItem::Tokens,
+        BackupItem::LlmConfig,
+        BackupItem::LlmKeys,
+        BackupItem::ChatHistory,
+        BackupItem::WebdavMounts,
+    ]
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -282,7 +338,8 @@ impl Default for AppConfig {
             last_download_path: None,
             segment_download_concurrency: default_segment_concurrency(),
             update_channel: "stable".to_string(),
-            auto_backup_dir: None,
+            auto_backup_target: None,
+            auto_backup_items: default_backup_items(),
             close_to_tray: false,
         }
     }

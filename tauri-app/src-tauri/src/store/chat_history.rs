@@ -396,6 +396,275 @@ pub(crate) fn recent_messages_for_extraction(
     messages
 }
 
+/// One raw conversation row in a backup snapshot.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotConversation {
+    pub id: String,
+    pub title: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// One raw message row in a backup snapshot (ids preserved).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotMessage {
+    pub id: i64,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    #[serde(default)]
+    pub reasoning: Option<String>,
+    /// Raw JSON string of the context file list.
+    #[serde(default)]
+    pub context_files: String,
+    pub created_at: i64,
+}
+
+/// One raw memory row in a backup snapshot, including the internal
+/// `__counter_*` extraction-marker rows.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotMemory {
+    pub id: String,
+    pub content: String,
+    #[serde(default)]
+    pub source_conversation_id: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub use_count: i64,
+    #[serde(default)]
+    pub last_used_at: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Full snapshot of chat_history.db: conversations, messages and user
+/// memories. Used by the backup feature; restore is a transactional
+/// clear-and-insert that preserves ids and timestamps.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ChatHistorySnapshot {
+    pub conversations: Vec<SnapshotConversation>,
+    pub messages: Vec<SnapshotMessage>,
+    pub memories: Vec<SnapshotMemory>,
+}
+
+/// Export every row of chat_history.db (conversations, messages, memories)
+/// as a portable snapshot.
+pub fn export_chat_history_snapshot(db_path: &PathBuf) -> Result<ChatHistorySnapshot, AppError> {
+    let conn = Connection::open(db_path).map_err(|e| AppError::Config {
+        message: format!("cannot open chat history database: {}", e),
+    })?;
+    ChatHistoryStore::migrate(&conn)?;
+
+    let mut conversations = Vec::new();
+    let mut stmt = conn
+        .prepare("SELECT id, title, created_at, updated_at FROM conversations ORDER BY created_at")
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(SnapshotConversation {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    for row in rows {
+        conversations.push(row.map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?);
+    }
+
+    let mut messages = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, conversation_id, role, content, reasoning, context_files, created_at
+             FROM messages ORDER BY id",
+        )
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(SnapshotMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                reasoning: row.get(4)?,
+                context_files: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    for row in rows {
+        messages.push(row.map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?);
+    }
+
+    let mut memories = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, content, source_conversation_id, enabled, pinned, use_count,
+                    last_used_at, created_at, updated_at
+             FROM memories ORDER BY created_at, id",
+        )
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(SnapshotMemory {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                source_conversation_id: row.get(2)?,
+                enabled: row.get::<_, i64>(3)? != 0,
+                pinned: row.get::<_, i64>(4)? != 0,
+                use_count: row.get(5)?,
+                last_used_at: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    for row in rows {
+        memories.push(row.map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?);
+    }
+
+    Ok(ChatHistorySnapshot {
+        conversations,
+        messages,
+        memories,
+    })
+}
+
+/// Replace the contents of chat_history.db with `snapshot` in a single
+/// transaction (clear + insert, ids and timestamps preserved). Concurrent
+/// writers get SQLITE_BUSY after the busy timeout rather than corruption.
+pub fn import_chat_history_snapshot(
+    db_path: &PathBuf,
+    snapshot: &ChatHistorySnapshot,
+) -> Result<(), AppError> {
+    let mut conn = Connection::open(db_path).map_err(|e| AppError::Config {
+        message: format!("cannot open chat history database: {}", e),
+    })?;
+    ChatHistoryStore::migrate(&conn)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+
+    let tx = conn.transaction().map_err(|e| AppError::Config {
+        message: e.to_string(),
+    })?;
+    tx.execute("DELETE FROM messages", [])
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    tx.execute("DELETE FROM conversations", [])
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    tx.execute("DELETE FROM memories", [])
+        .map_err(|e| AppError::Config {
+            message: e.to_string(),
+        })?;
+    // Reset the AUTOINCREMENT counter so restored message ids stay stable
+        // and new messages continue above the highest restored id.
+    let _ = tx.execute("DELETE FROM sqlite_sequence WHERE name = 'messages'", []);
+
+    {
+        let mut stmt = tx
+            .prepare("INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?4)")
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        for c in &snapshot.conversations {
+            stmt.execute(params![c.id, c.title, c.created_at, c.updated_at])
+                .map_err(|e| AppError::Config {
+                    message: e.to_string(),
+                })?;
+        }
+    }
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO messages (id, conversation_id, role, content, reasoning, context_files, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        for m in &snapshot.messages {
+            stmt.execute(params![
+                m.id,
+                m.conversation_id,
+                m.role,
+                m.content,
+                m.reasoning,
+                m.context_files,
+                m.created_at
+            ])
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        }
+    }
+    {
+        let mut stmt = tx
+            .prepare(
+                "INSERT INTO memories (id, content, source_conversation_id, enabled, pinned, use_count, last_used_at, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        for m in &snapshot.memories {
+            stmt.execute(params![
+                m.id,
+                m.content,
+                m.source_conversation_id,
+                m.enabled as i64,
+                m.pinned as i64,
+                m.use_count,
+                m.last_used_at,
+                m.created_at,
+                m.updated_at
+            ])
+            .map_err(|e| AppError::Config {
+                message: e.to_string(),
+            })?;
+        }
+    }
+
+    tx.commit().map_err(|e| AppError::Config {
+        message: e.to_string(),
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,6 +801,126 @@ mod tests {
         let store = make_store(&dir);
         store.open().unwrap();
         store.open().unwrap(); // second open must not fail or duplicate schema
+        assert!(store.list_conversations().unwrap().is_empty());
+    }
+
+    #[test]
+    fn chat_snapshot_round_trip_preserves_rows_and_ids() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("chat_history.db");
+        let store = ChatHistoryStore::new(dir.path().to_path_buf());
+
+        let conv_a = store.create_conversation("第一段对话").unwrap();
+        store
+            .append_message(&conv_a, &user_msg("你好"))
+            .unwrap();
+        store
+            .append_message(
+                &conv_a,
+                &StoredChatMessage {
+                    role: "assistant".into(),
+                    content: "回答".into(),
+                    reasoning: Some("推理".into()),
+                    context_files: vec![],
+                    created_at: 0,
+                },
+            )
+            .unwrap();
+        let conv_b = store.create_conversation("第二段对话").unwrap();
+        store.append_message(&conv_b, &user_msg("第二条")).unwrap();
+
+        // One memory plus one internal counter row.
+        let memory = crate::store::memory::MemoryStore::new(dir.path().to_path_buf());
+        memory.save("", "用户偏好深色主题", &conv_a).unwrap();
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO memories (id, content, source_conversation_id, enabled, pinned, use_count, last_used_at, created_at, updated_at)
+                 VALUES ('__counter_c1', '', '__counter', 1, 0, 7, 0, 100, 100)",
+                [],
+            )
+            .unwrap();
+        }
+        let message_ids: Vec<i64> = {
+            let conn = Connection::open(&db_path).unwrap();
+            let mut stmt = conn.prepare("SELECT id FROM messages ORDER BY id").unwrap();
+            let ids = stmt
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .filter_map(Result::ok)
+                .collect();
+            ids
+        };
+
+        let snapshot = export_chat_history_snapshot(&db_path).unwrap();
+        assert_eq!(snapshot.conversations.len(), 2);
+        assert_eq!(snapshot.messages.len(), 3);
+        assert_eq!(snapshot.memories.len(), 2);
+
+        // Restore into a FRESH location (simulates another machine) and
+        // verify rows, ids and ordering survive.
+        let target_dir = TempDir::new().unwrap();
+        let target_db = target_dir.path().join("chat_history.db");
+        import_chat_history_snapshot(&target_db, &snapshot).unwrap();
+
+        let restored_store = ChatHistoryStore::new(target_dir.path().to_path_buf());
+        let restored_msgs = restored_store.get_messages(&conv_a).unwrap();
+        assert_eq!(restored_msgs.len(), 2);
+        assert_eq!(restored_msgs[0].content, "你好");
+        assert_eq!(restored_msgs[1].reasoning.as_deref(), Some("推理"));
+        let restored_metas = restored_store.list_conversations().unwrap();
+        assert_eq!(restored_metas.len(), 2);
+
+        // Message ids preserved exactly.
+        let conn = Connection::open(&target_db).unwrap();
+        let mut stmt = conn.prepare("SELECT id FROM messages ORDER BY id").unwrap();
+        let restored_ids: Vec<i64> = stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert_eq!(restored_ids, message_ids);
+
+        // Counter row survives (extraction position kept).
+        let counter: i64 = conn
+            .query_row(
+                "SELECT use_count FROM memories WHERE id = '__counter_c1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(counter, 7);
+
+        // New messages after restore continue above the highest restored id.
+        restored_store
+            .append_message(&conv_a, &user_msg("恢复后新消息"))
+            .unwrap();
+        let conn = Connection::open(&target_db).unwrap();
+        let new_id: i64 = conn
+            .query_row(
+                "SELECT id FROM messages WHERE content = '恢复后新消息'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            restored_ids.iter().all(|id| new_id > *id),
+            "new id {} must exceed restored ids {:?}",
+            new_id,
+            restored_ids
+        );
+    }
+
+    #[test]
+    fn import_replaces_existing_rows() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("chat_history.db");
+        let store = ChatHistoryStore::new(dir.path().to_path_buf());
+        let conv = store.create_conversation("将被清空").unwrap();
+        store.append_message(&conv, &user_msg("旧消息")).unwrap();
+
+        // An empty snapshot must wipe existing rows.
+        import_chat_history_snapshot(&db_path, &ChatHistorySnapshot::default()).unwrap();
         assert!(store.list_conversations().unwrap().is_empty());
     }
 }

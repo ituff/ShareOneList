@@ -9,8 +9,7 @@
     "askai": "Ask AI",
     "search": "Search",
     "collapse": "Collapse sidebar",
-    "expand": "Expand sidebar",
-    "sitemap": "Site Map"
+    "expand": "Expand sidebar"
   },
   "home": {
     "title": "ShareOneList",
@@ -185,6 +184,10 @@
       "download-assistant": {
         "title": "Download Assistant",
         "description": "Parse OneDrive/SharePoint share links and push downloads to Aria2 / Motrix / IDM."
+      },
+      "sitemap": {
+        "title": "Site Map",
+        "description": "Your cloud map grows automatically from browsing and searching. Stored locally; delete anytime."
       }
     },
     "backToMenu": "Tool menu"
@@ -230,23 +233,7 @@
     "channelStable": "Stable",
     "channelBeta": "Beta",
     "tabBackup": "Backup",
-    "tabMount": "Mounting",
-    "backupTitle": "Backup & Restore",
-    "noTokens": "Backups include all settings and accounts (no login credentials). Accounts require one re-login after import.",
-    "export": "Export config",
-    "exportDone": "Config exported",
-    "import": "Import config",
-    "importFile": "Backup file",
-    "importConfirm": "Importing overwrites your current settings and account list. Continue?",
-    "importConfirmButton": "Import now",
-    "importDone": "Imported {{count}} accounts. Please sign in again to use them.",
-    "autoTitle": "Automatic backup",
-    "autoHint": "Pick a OneDrive sync folder (local path). After every settings or account change, the latest config backup is written there automatically and synced to the cloud by OneDrive.",
-    "autoOff": "No auto backup folder set",
-    "autoChoose": "Choose folder",
-    "autoClear": "Clear",
-    "autoSetDone": "Auto backup enabled — a backup of the current config was written",
-    "autoCleared": "Auto backup disabled"
+    "tabMount": "Mounting"
   },
   "accounts": {
     "addAccount": "Add Account",
@@ -570,7 +557,7 @@
   },
   "backup": {
     "title": "Backup & Restore",
-    "noTokens": "Backups include all settings and accounts (no login credentials). Accounts require one re-login after import.",
+    "noTokens": "Backups always include settings and accounts. Choose additional contents below — secret-bearing sections are encrypted with your backup password, and accounts restored with their credentials don't need re-login.",
     "export": "Export config",
     "exportDone": "Config exported",
     "import": "Import config",
@@ -579,12 +566,72 @@
     "importConfirmButton": "Import now",
     "importDone": "Imported {{count}} accounts. Please sign in again to use them.",
     "autoTitle": "Automatic backup",
-    "autoHint": "Pick a OneDrive sync folder (local path). After every settings or account change, the latest config backup is written there automatically and synced to the cloud by OneDrive.",
-    "autoOff": "No auto backup folder set",
+    "autoHint": "Pick a signed-in account and a folder in its OneDrive. Every settings or account change uploads the latest backup automatically. Startup and exit backups run only when chat history or the Drive Catalog map is selected below and its content has changed.",
+    "autoOff": "No backup folder set",
     "autoChoose": "Choose folder",
     "autoClear": "Clear",
-    "autoSetDone": "Auto backup enabled — a backup of the current config was written",
-    "autoCleared": "Auto backup disabled"
+    "autoSetDone": "Auto backup enabled — the current backup was uploaded",
+    "autoCleared": "Auto backup disabled",
+    "autoAccountMissing": "Account signed out",
+    "itemsTitle": "Backup contents",
+    "itemsHint": "Choose which data is included in exports and automatic backups. Sections with secrets are always encrypted.",
+    "items": {
+      "tokens": {
+        "name": "Sign-in credentials",
+        "desc": "Refresh tokens (encrypted). Accounts come back without re-login after a restore."
+      },
+      "llm_config": {
+        "name": "AI provider configuration",
+        "desc": "Model providers, endpoints and models (llm.json, no keys)."
+      },
+      "llm_keys": {
+        "name": "AI provider API keys",
+        "desc": "API keys stored in the OS keychain (encrypted)."
+      },
+      "chat_history": {
+        "name": "Chat history & memories",
+        "desc": "AI conversations and remembered user facts (encrypted)."
+      },
+      "catalog": {
+        "name": "Drive Catalog map",
+        "desc": "The accumulated directory knowledge used by Ask-AI (rebuildable)."
+      },
+      "webdav_mounts": {
+        "name": "WebDAV mount points",
+        "desc": "Mount definitions and gateway password (encrypted). Applied on next launch."
+      },
+      "download_tasks": {
+        "name": "Download task list",
+        "desc": "Task metadata only — no file contents. Applied on next launch."
+      }
+    },
+    "enc": {
+      "title": "Backup password",
+      "hint": "Encrypts secret sections with AES-256-GCM (key derived from this password). The password itself is never uploaded — you need it to restore on another machine.",
+      "isSet": "Password set",
+      "notSet": "Not set",
+      "needed": "Selected sections contain secrets — set a backup password, or they will be left out of backups.",
+      "newPassword": "New password (min 6 chars)",
+      "confirmPassword": "Confirm password",
+      "setPassword": "Save password",
+      "change": "Change password",
+      "saved": "Backup password saved",
+      "tooShort": "Password must be at least 6 characters",
+      "mismatch": "Passwords do not match",
+      "importPrompt": "Backup password"
+    },
+    "importChooseItems": "Restore these items:",
+    "picker": {
+      "title": "Choose backup folder",
+      "account": "Backup to account",
+      "noAccounts": "Sign in to an account first.",
+      "newFolder": "New folder",
+      "newFolderPlaceholder": "Folder name",
+      "loading": "Loading folders…",
+      "empty": "No subfolders — use this folder or create one",
+      "currentPath": "Backup folder",
+      "useFolder": "Use this folder"
+    }
   },
   "closeGuard": {
     "title": "Mounted drives are in use",

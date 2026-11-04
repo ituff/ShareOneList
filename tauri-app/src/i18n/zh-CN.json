@@ -9,8 +9,7 @@
     "askai": "问 AI",
     "search": "搜索",
     "collapse": "收起侧边栏",
-    "expand": "展开侧边栏",
-    "sitemap": "站点地图"
+    "expand": "展开侧边栏"
   },
   "home": {
     "title": "ShareOneList",
@@ -185,6 +184,10 @@
       "download-assistant": {
         "title": "下载助手",
         "description": "解析 OneDrive/SharePoint 分享链接，推送到 Aria2 / Motrix / IDM 下载。"
+      },
+      "sitemap": {
+        "title": "站点地图",
+        "description": "地图跟随你的浏览与搜索自动生长。数据仅存本机，可随时删除。"
       }
     },
     "backToMenu": "返回工具菜单"
@@ -230,23 +233,7 @@
     "channelStable": "正式版",
     "channelBeta": "测试版",
     "tabBackup": "备份与恢复",
-    "tabMount": "挂载",
-    "backupTitle": "备份与恢复",
-    "noTokens": "备份包含全部设置与账户信息（不含登录凭据）。导入后账户需要重新登录一次。",
-    "export": "导出配置",
-    "exportDone": "配置已导出",
-    "import": "导入配置",
-    "importFile": "备份文件",
-    "importConfirm": "导入将覆盖当前的设置与账户列表。确定继续吗？",
-    "importConfirmButton": "确认导入",
-    "importDone": "导入成功，已恢复 {{count}} 个账户，请重新登录后使用。",
-    "autoTitle": "自动备份",
-    "autoHint": "选择一个 OneDrive 同步文件夹（本地路径）。每次设置或账户变更后，系统会自动把最新配置备份写入该文件夹，由 OneDrive 同步到云端。",
-    "autoOff": "未设置自动备份路径",
-    "autoChoose": "选择文件夹",
-    "autoClear": "清除",
-    "autoSetDone": "已开启自动备份，并已生成当前配置备份",
-    "autoCleared": "已关闭自动备份"
+    "tabMount": "挂载"
   },
   "accounts": {
     "addAccount": "添加账户",
@@ -570,7 +557,7 @@
   },
   "backup": {
     "title": "备份与恢复",
-    "noTokens": "备份包含全部设置与账户信息（不含登录凭据）。导入后账户需要重新登录一次。",
+    "noTokens": "备份始终包含设置与账户。可在下方勾选更多内容——含密钥的部分会使用备份密码加密，凭据一并恢复的账户无需重新登录。",
     "export": "导出配置",
     "exportDone": "配置已导出",
     "import": "导入配置",
@@ -579,12 +566,72 @@
     "importConfirmButton": "确认导入",
     "importDone": "导入成功，已恢复 {{count}} 个账户，请重新登录后使用。",
     "autoTitle": "自动备份",
-    "autoHint": "选择一个 OneDrive 同步文件夹（本地路径）。每次设置或账户变更后，系统会自动把最新配置备份写入该文件夹，由 OneDrive 同步到云端。",
-    "autoOff": "未设置自动备份路径",
+    "autoHint": "选择一个已登录账户及其 OneDrive 中的文件夹。设置或账户变更后自动上传最新备份；仅当下方勾选了聊天记录或目录地图且内容有变化时，启动/退出时才会额外备份。",
+    "autoOff": "未设置备份文件夹",
     "autoChoose": "选择文件夹",
     "autoClear": "清除",
-    "autoSetDone": "已开启自动备份，并已生成当前配置备份",
-    "autoCleared": "已关闭自动备份"
+    "autoSetDone": "已开启自动备份，当前备份已上传",
+    "autoCleared": "已关闭自动备份",
+    "autoAccountMissing": "账户已退出登录",
+    "itemsTitle": "备份内容",
+    "itemsHint": "选择导出和自动备份中包含的数据。含密钥的部分始终加密存储。",
+    "items": {
+      "tokens": {
+        "name": "登录凭据",
+        "desc": "Refresh token（加密）。恢复后账户无需重新登录。"
+      },
+      "llm_config": {
+        "name": "AI 供应商配置",
+        "desc": "模型供应商、接口地址与模型（llm.json，不含密钥）。"
+      },
+      "llm_keys": {
+        "name": "AI 供应商 API Key",
+        "desc": "系统钥匙串中的 API 密钥（加密）。"
+      },
+      "chat_history": {
+        "name": "聊天记录与用户记忆",
+        "desc": "AI 对话和记忆的用户偏好（加密）。"
+      },
+      "catalog": {
+        "name": "Drive Catalog 目录地图",
+        "desc": "问AI 使用的目录知识（可重建）。"
+      },
+      "webdav_mounts": {
+        "name": "WebDAV 挂载点",
+        "desc": "挂载定义与网关密码（加密）。下次启动生效。"
+      },
+      "download_tasks": {
+        "name": "下载任务列表",
+        "desc": "仅任务元数据，不含文件内容。下次启动生效。"
+      }
+    },
+    "enc": {
+      "title": "备份密码",
+      "hint": "使用 AES-256-GCM 加密含密钥的部分（密钥由该密码派生）。密码本身不上传——换机恢复时需要输入。",
+      "isSet": "已设置",
+      "notSet": "未设置",
+      "needed": "所选内容包含密钥——请设置备份密码，否则这些内容不会进入备份。",
+      "newPassword": "新密码（至少 6 位）",
+      "confirmPassword": "确认密码",
+      "setPassword": "保存密码",
+      "change": "修改密码",
+      "saved": "备份密码已保存",
+      "tooShort": "密码至少需要 6 个字符",
+      "mismatch": "两次输入的密码不一致",
+      "importPrompt": "备份密码"
+    },
+    "importChooseItems": "恢复以下项目：",
+    "picker": {
+      "title": "选择备份文件夹",
+      "account": "备份到账户",
+      "noAccounts": "请先登录一个账户。",
+      "newFolder": "新建文件夹",
+      "newFolderPlaceholder": "文件夹名称",
+      "loading": "正在加载文件夹…",
+      "empty": "没有子文件夹——可直接使用当前文件夹或新建一个",
+      "currentPath": "备份文件夹",
+      "useFolder": "使用此文件夹"
+    }
   },
   "closeGuard": {
     "title": "挂载点正在使用",

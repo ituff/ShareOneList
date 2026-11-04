@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Download, ArrowLeft } from "lucide-react";
+import { Download, ArrowLeft, Map } from "lucide-react";
 import { useToastStore } from "../../stores/toastStore";
 import { getErrorMessage } from "../../lib/errors";
+import { SitemapPage } from "../sitemap/SitemapPage";
 
 type DownloaderType = "aria2" | "motrix" | "idm";
 
@@ -19,15 +20,32 @@ const DOWNLOADER_LABELS: Record<DownloaderType, string> = {
   idm: "IDM",
 };
 
-type ToolId = "download-assistant";
+type ToolId = "download-assistant" | "sitemap";
 
 const TOOL_CARDS: { id: ToolId; icon: typeof Download }[] = [
   { id: "download-assistant", icon: Download },
+  { id: "sitemap", icon: Map },
 ];
 
 export function ToolsPage() {
   const { t } = useTranslation();
   const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+
+  if (activeTool === "sitemap") {
+    return (
+      <div className="flex h-full flex-col gap-3">
+        <button
+          onClick={() => setActiveTool(null)}
+          className="flex items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" /> {t("tools.backToMenu")}
+        </button>
+        <div className="min-h-0 flex-1">
+          <SitemapPage />
+        </div>
+      </div>
+    );
+  }
 
   if (activeTool === "download-assistant") {
     return (

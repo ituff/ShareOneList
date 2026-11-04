@@ -9,8 +9,7 @@
     "askai": "AIに質問",
     "search": "検索",
     "collapse": "サイドバーを折りたたむ",
-    "expand": "サイドバーを展開",
-    "sitemap": "サイトマップ"
+    "expand": "サイドバーを展開"
   },
   "home": {
     "title": "ShareOneList",
@@ -172,6 +171,10 @@
       "download-assistant": {
         "title": "ダウンロードアシスタント",
         "description": "OneDrive/SharePoint の共有リンクを解析し、Aria2 / Motrix / IDM にダウンロードを転送します。"
+      },
+      "sitemap": {
+        "title": "サイトマップ",
+        "description": "クラウドマップは閲覧と検索から自動的に成長します。データはローカルにのみ保存され、いつでも削除できます。"
       }
     },
     "backToMenu": "ツールメニュー"

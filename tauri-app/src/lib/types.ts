@@ -139,6 +139,33 @@ export interface WindowState {
   isMaximized: boolean;
 }
 
+/** Cloud OneDrive folder that receives automatic config backups. The user
+ * picks the owning account first, then a folder inside its OneDrive. */
+export interface AutoBackupTarget {
+  /** Signed-in identity owning the target OneDrive. */
+  homeAccountId: string;
+  /** Cloud the account lives in (token + Graph base URL selection). */
+  cloudEnv: CloudEnvironment;
+  /** The account's OneDrive drive id. */
+  driveId: string;
+  /** Id of the chosen destination folder. */
+  folderId: string;
+  /** Display path of the chosen folder (e.g. "/Apps/ShareOneList"). */
+  folderPath: string;
+}
+
+/** One optional data section a backup can include. Secret-bearing sections
+ * are always encrypted inside the backup payload. Mirrors the Rust
+ * `BackupItem` (snake_case). */
+export type BackupItem =
+  | "tokens"
+  | "llm_config"
+  | "llm_keys"
+  | "chat_history"
+  | "catalog"
+  | "webdav_mounts"
+  | "download_tasks";
+
 /** Application-level configuration stored on disk. */
 export interface AppConfig {
   theme: ThemeMode;
@@ -150,8 +177,10 @@ export interface AppConfig {
   segmentDownloadConcurrency: number;
   /** Update channel: "stable" or "beta" (prereleases included). */
   updateChannel: "stable" | "beta";
-  /** Directory receiving automatic config backups; null disables. */
-  autoBackupDir: string | null;
+  /** Cloud OneDrive folder receiving automatic config backups; null disables. */
+  autoBackupTarget: AutoBackupTarget | null;
+  /** Optional data sections included in backups. */
+  autoBackupItems: BackupItem[];
   /** Closing the main window hides it to the tray instead of exiting. */
   closeToTray: boolean;
 }
