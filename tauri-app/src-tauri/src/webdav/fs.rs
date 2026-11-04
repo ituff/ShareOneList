@@ -1,20 +1,27 @@
 // GraphDavFileSystem: translates WebDAV filesystem operations into
 // Microsoft Graph calls for one mount point.
 //
-// Read path only (P0): metadata / read_dir / open-for-read. Write methods
-// fall through to dav-server's default FsError::NotImplemented until P1;
-// `open` explicitly rejects write flags so PUT gets a clean 403.
+// Write support (P1): PUT stores file content (simple upload ≤16 MiB,
+// resumable session above), MKCOL creates folders, DELETE moves to the
+// OneDrive recycle bin, MOVE/COPY map to Graph PATCH/copy. Junk names
+// (.DS_Store, ._*, Thumbs.db, …) are black-holed on write: dav-server gets
+// a success reply but nothing lands in the cloud, keeping Finder/Explorer
+// droppings invisible. Range-PUT / PATCH-style partial updates are not
+// implemented (501).
 //
 // Token handling reuses AuthModule::get_token_for_account so mounts stay
 // isolated per (cloud_env, home_account_id) and refresh silently. HTTP calls
 // reuse GraphClient's 5xx retry. Graph access tokens never leave this process.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use serde_json::json;
 use tauri::Manager;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::auth::cloud_config::CloudEnvironment;
 use crate::auth::AuthModule;
@@ -38,6 +45,20 @@ const PREFETCH_CHUNK: usize = 4 * 1024 * 1024;
 /// 30s whole-request timeout, which is too tight for cross-border SharePoint
 /// links mid-transfer; reads may legitimately take minutes.
 const RANGE_FETCH_TIMEOUT: Duration = Duration::from_secs(300);
+/// PUT bodies above this size spill from memory to a temp file before upload.
+/// Explorer routinely copies gigabyte videos into mounted drives; buffering
+/// those in RAM would balloon the process. 16 MiB keeps typical Office
+/// documents and photos fully in memory while capping worst-case usage.
+const WRITE_SPILL_THRESHOLD: usize = 16 * 1024 * 1024;
+/// One upload-session chunk. Graph's resumable session accepts 0-60 MiB
+/// chunks; 4 MiB matches the app's other upload engines (retries stay cheap).
+const UPLOAD_CHUNK_SIZE: usize = 4 * 1024 * 1024;
+/// Retries per upload-session chunk (1s/2s/4s backoff), mirroring the
+/// transfer engine's per-chunk retry policy for transient failures.
+const UPLOAD_CHUNK_RETRIES: u32 = 3;
+/// Whole-request timeout for one upload-session chunk PUT (uplink-limited
+/// connections can take minutes to push 4 MiB).
+const UPLOAD_CHUNK_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Characters percent-encoded inside a single Graph path-addressing segment.
 /// Filenames cannot contain `/ \ : * ? " < > |` per our validators, but other
@@ -116,6 +137,87 @@ pub fn graph_item_path_url(
             root_part,
             encoded.join("/")
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Write-path URL / payload builders (pure, unit-tested)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Simple-upload URL for a mount-relative file path. WebDAV PUT means "store
+/// this content", so conflicts replace the existing file — the client already
+/// asked the user before overwriting. The `:/content` suffix is what makes
+/// Graph treat the PUT as content storage; without it the PUT would target
+/// the item's *metadata* and be rejected ("Entity only allows writes with a
+/// JSON Content-Type header").
+fn write_content_url(base: &str, drive_id: &str, root_item_id: &str, rel_segments: &[String]) -> String {
+    format!(
+        "{}:/content?@microsoft.graph.conflictBehavior=replace",
+        graph_item_path_url(base, drive_id, root_item_id, rel_segments)
+    )
+}
+
+/// createUploadSession URL for payloads above the simple-upload limit.
+fn write_session_url(base: &str, drive_id: &str, root_item_id: &str, rel_segments: &[String]) -> String {
+    format!(
+        "{}:/createUploadSession",
+        graph_item_path_url(base, drive_id, root_item_id, rel_segments)
+    )
+}
+
+/// One upload-session chunk PUT's Content-Range value (inclusive end).
+fn content_range(start: usize, end_exclusive: usize, total: usize) -> String {
+    format!("bytes {}-{}/{}", start, end_exclusive - 1, total)
+}
+
+/// MKCOL payload: `fail` turns a name conflict into Graph 409, which dav-server
+/// surfaces as 405 Method Not Allowed per RFC 4918.
+fn create_folder_body(name: &str) -> serde_json::Value {
+    json!({
+        "name": name,
+        "folder": {},
+        "@microsoft.graph.conflictBehavior": "fail"
+    })
+}
+
+/// MOVE payload: one PATCH retargets the name and/or the parent folder.
+fn move_patch_body(name: &str, dst_parent_id: &str) -> serde_json::Value {
+    json!({
+        "name": name,
+        "parentReference": { "id": dst_parent_id }
+    })
+}
+
+/// COPY payload. Graph performs the copy asynchronously (202 Accepted); the
+/// item appears in the destination once the server-side job finishes.
+fn copy_body(name: &str, dst_parent_id: &str) -> serde_json::Value {
+    json!({
+        "name": name,
+        "parentReference": { "id": dst_parent_id }
+    })
+}
+
+/// Last-segment junk check: `None` when the path has no segments (mount root)
+/// or the name is a normal file, `Some(true)` for junk names.
+fn write_target_is_junk(rel_segments: &[String]) -> bool {
+    rel_segments.last().is_some_and(|n| is_junk_file(n))
+}
+
+/// The ingest decision: a chunk stays in the in-memory buffer only while the
+/// running total fits the spill threshold.
+fn stays_in_memory(current_len: usize, incoming: usize) -> bool {
+    current_len + incoming <= WRITE_SPILL_THRESHOLD
+}
+
+/// Map a write-path Graph failure to a dav-server FsError. 409 means a name
+/// conflict on create/rename (dav-server maps Exists to 405 for MKCOL and
+/// handles MOVE overwrite itself); everything else defers to `fs_error`.
+fn write_fs_error(err: &AppError) -> FsError {
+    match err {
+        AppError::GraphApi {
+            status_code: 409, ..
+        } => FsError::Exists,
+        other => fs_error(other),
     }
 }
 
@@ -288,6 +390,54 @@ impl FsCtx {
             status_code: 0,
         })
     }
+
+    /// Authenticated Graph write request with 5xx retry. Non-2xx (including
+    /// 4xx) surface as `AppError::GraphApi` from `request_with_retry`.
+    async fn write_request<F>(&self, build: F) -> Result<reqwest::Response, AppError>
+    where
+        F: Fn(&reqwest::Client, &str) -> reqwest::RequestBuilder,
+    {
+        let token = self.token().await?;
+        self.client.request_with_retry(&token, build).await
+    }
+
+    /// DELETE a drive item by id. Graph moves it to the OneDrive recycle bin —
+    /// recoverable, matching the in-app delete behavior.
+    async fn delete_item(&self, item_id: &str) -> Result<(), AppError> {
+        let url = format!(
+            "{}/drives/{}/items/{}",
+            self.base_url(),
+            self.drive_id,
+            item_id
+        );
+        self.write_request(|http, tkn| http.delete(&url).bearer_auth(tkn))
+            .await?;
+        Ok(())
+    }
+
+    /// POST a JSON body and expect 2xx (201/202/200). Returns the parsed JSON
+    /// response when there is one.
+    async fn post_json(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, AppError> {
+        let response = self
+            .write_request(|http, tkn| {
+                http.post(url)
+                    .bearer_auth(tkn)
+                    .header("Content-Type", "application/json")
+                    .body(body.to_string())
+            })
+            .await?;
+        response
+            .json()
+            .await
+            .map_err(|e| AppError::GraphApi {
+                message: format!("failed to parse Graph write response: {}", e),
+                status_code: 0,
+            })
+    }
 }
 
 #[derive(Clone)]
@@ -436,31 +586,301 @@ impl DavFileSystem for GraphDavFs {
 
     fn open<'a>(&'a self, path: &'a DavPath, options: OpenOptions) -> FsFuture<'a, Box<dyn DavFile>> {
         Box::pin(async move {
-            // P0 is read-only: reject anything that smells like a write.
-            if options.write
-                || options.append
-                || options.truncate
-                || options.create
-                || options.create_new
-                || !options.read
-            {
-                return Err(FsError::Forbidden);
-            }
             let segs = self.segments(path);
-            let item = self.metadata_segments(&segs).await?;
-            if item.is_dir {
-                return Err(FsError::Forbidden);
+            let name = segs.last().cloned();
+
+            // Partial updates (PATCH-style Range PUT) are not supported:
+            // Graph upload sessions are whole-file. dav-server turns this
+            // into 501 so capable clients fall back to a full PUT.
+            if options.write && (options.append || !options.truncate) {
+                return Err(FsError::NotImplemented);
             }
-            Ok(Box::new(GraphFile {
+            if !options.write {
+                // Existing read path.
+                let item = self.metadata_segments(&segs).await?;
+                if item.is_dir {
+                    return Err(FsError::Forbidden);
+                }
+                return Ok(Box::new(GraphFile {
+                    ctx: Arc::clone(&self.ctx),
+                    item,
+                    pos: 0,
+                    buf: bytes::Bytes::new(),
+                    buf_start: 0,
+                    download_url: None,
+                }) as Box<dyn DavFile>);
+            }
+
+            // ── Write path (PUT) ──
+            let Some(name) = name else {
+                return Err(FsError::Forbidden); // cannot PUT the mount root
+            };
+            if is_junk_file(&name) {
+                // Black-hole OS droppings: reply success, store nothing.
+                return Ok(Box::new(GraphWriteFile {
+                    ctx: Arc::clone(&self.ctx),
+                    rel: segs,
+                    written: 0,
+                    spill: WriteSpill::Memory(bytes::BytesMut::new()),
+                    junk: true,
+                    pos: 0,
+                }) as Box<dyn DavFile>);
+            }
+            // Precondition handling: If-None-Match:* (create_new) must fail
+            // with Exists when the target exists; If-Match:* (!create) must
+            // fail with NotFound when it doesn't. dav-server converts both
+            // into 412 PRECONDITION_FAILED.
+            if options.create_new || !options.create {
+                let exists = match self.metadata_segments(&segs).await {
+                    Ok(_) => true,
+                    Err(FsError::NotFound) => false,
+                    Err(e) => return Err(e),
+                };
+                if options.create_new && exists {
+                    return Err(FsError::Exists);
+                }
+                if !options.create && !exists {
+                    return Err(FsError::NotFound);
+                }
+            }
+            // honor the size hint: pre-spill huge PUTs instead of growing a
+            // 4 GiB BytesMut one 256 KB chunk at a time.
+            let spill = if options
+                .size
+                .map(|s| s as usize > WRITE_SPILL_THRESHOLD)
+                .unwrap_or(false)
+            {
+                WriteSpill::new_file()
+                    .await
+                    .map_err(|_| FsError::GeneralFailure)?
+            } else {
+                WriteSpill::Memory(bytes::BytesMut::new())
+            };
+            Ok(Box::new(GraphWriteFile {
                 ctx: Arc::clone(&self.ctx),
-                item,
+                rel: segs,
+                written: 0,
+                spill,
+                junk: false,
                 pos: 0,
-                buf: bytes::Bytes::new(),
-                buf_start: 0,
-                download_url: None,
             }) as Box<dyn DavFile>)
         })
     }
+
+    fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        Box::pin(async move {
+            let segs = self.segments(path);
+            let Some(name) = segs.last().cloned() else {
+                return Err(FsError::Exists); // MKCOL on the mount root
+            };
+            if is_junk_file(&name) {
+                return Ok(()); // black-hole, consistent with junk PUTs
+            }
+            let parent = self
+                .metadata_segments(&segs[..segs.len() - 1])
+                .await?; // NotFound -> dav-server 409 CONFLICT
+            let url = format!(
+                "{}/drives/{}/items/{}/children",
+                self.ctx.base_url(),
+                self.ctx.drive_id,
+                parent.id
+            );
+            let item: CachedItem = match self.ctx.post_json(&url, &create_folder_body(&name)).await
+            {
+                Ok(json) => {
+                    raw_to_cached(serde_json::from_value(json).map_err(|_| FsError::GeneralFailure)?)
+                }
+                Err(e) => return Err(write_fs_error(&e)), // 409 -> Exists -> 405
+            };
+            let rel = segs.join("/");
+            self.ctx.cache.invalidate_parent(&rel);
+            self.ctx.cache.put_item(&rel, item);
+            Ok(())
+        })
+    }
+
+    fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        Box::pin(async move {
+            let segs = self.segments(path);
+            if segs.is_empty() {
+                return Err(FsError::Forbidden); // never delete the mount root
+            }
+            if write_target_is_junk(&segs) {
+                return Ok(()); // invisible junk: pretend it's gone
+            }
+            let item = self.metadata_segments(&segs).await?;
+            self.ctx
+                .delete_item(&item.id)
+                .await
+                .map_err(|e| fs_error(&e))?;
+            self.ctx.cache.invalidate_parent(&segs.join("/"));
+            Ok(())
+        })
+    }
+
+    fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
+        Box::pin(async move {
+            let segs = self.segments(path);
+            if segs.is_empty() {
+                return Err(FsError::Forbidden); // never delete the mount root
+            }
+            if write_target_is_junk(&segs) {
+                return Ok(()); // Finder's .TemporaryItems & friends
+            }
+            let item = self.metadata_segments(&segs).await?;
+            self.ctx
+                .delete_item(&item.id)
+                .await
+                .map_err(|e| fs_error(&e))?;
+            self.ctx.cache.invalidate_parent(&segs.join("/"));
+            self.ctx.cache.invalidate_dir(&segs.join("/"));
+            Ok(())
+        })
+    }
+
+    fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
+        Box::pin(async move {
+            let src_segs = self.segments(from);
+            let dst_segs = self.segments(to);
+            if src_segs.is_empty() || dst_segs.is_empty() {
+                return Err(FsError::Forbidden);
+            }
+            let src = self.metadata_segments(&src_segs).await?; // 404 -> 409
+            let dst_parent = self
+                .metadata_segments(&dst_segs[..dst_segs.len() - 1])
+                .await?; // NotFound -> 409
+            let Some(dst_name) = dst_segs.last().cloned() else {
+                return Err(FsError::Forbidden);
+            };
+
+            // Overwrite: dav-server pre-deletes destination *directories*
+            // only; for files it expects rename to replace in place. Graph
+            // PATCH has no conflictBehavior, so fetch the destination through
+            // its path (authoritative — the listing cache hides junk) and
+            // drop any occupant into the recycle bin first.
+            let dst_url = graph_item_path_url(
+                self.ctx.base_url(),
+                &self.ctx.drive_id,
+                &self.ctx.root_item_id,
+                &dst_segs,
+            );
+            if let Ok(json) = self.ctx.get_json(&dst_url).await {
+                if let Ok(occupant) =
+                    serde_json::from_value::<RawItem>(json).map(raw_to_cached)
+                {
+                    let _ = self.ctx.delete_item(&occupant.id).await;
+                }
+            }
+
+            // PATCH {name, parentReference} performs rename and/or move in
+            // one call. A 409 here means the destination appeared since the
+            // pre-check — drop it and retry once.
+            let patch_url = format!(
+                "{}/drives/{}/items/{}",
+                self.ctx.base_url(),
+                self.ctx.drive_id,
+                src.id
+            );
+            let patch_body = move_patch_body(&dst_name, &dst_parent.id);
+            let mut moved = self
+                .ctx
+                .write_request(|http, tkn| {
+                    patch_item(http, tkn, &patch_url, &patch_body)
+                })
+                .await;
+            if matches!(
+                &moved,
+                Err(AppError::GraphApi {
+                    status_code: 409,
+                    ..
+                })
+            ) {
+                if let Ok(json) = self.ctx.get_json(&dst_url).await {
+                    if let Ok(occupant) =
+                        serde_json::from_value::<RawItem>(json).map(raw_to_cached)
+                    {
+                        let _ = self.ctx.delete_item(&occupant.id).await;
+                    }
+                }
+                moved = self
+                    .ctx
+                    .write_request(|http, tkn| {
+                        patch_item(http, tkn, &patch_url, &patch_body)
+                    })
+                    .await;
+            }
+            moved.map_err(|e| fs_error(&e))?;
+
+            self.ctx.cache.invalidate_parent(&src_segs.join("/"));
+            self.ctx.cache.invalidate_parent(&dst_segs.join("/"));
+            Ok(())
+        })
+    }
+
+    fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
+        Box::pin(async move {
+            let src_segs = self.segments(from);
+            let dst_segs = self.segments(to);
+            if src_segs.is_empty() || dst_segs.is_empty() {
+                return Err(FsError::Forbidden);
+            }
+            if write_target_is_junk(&dst_segs) {
+                return Ok(()); // black-hole
+            }
+            let src = self.metadata_segments(&src_segs).await?;
+            let dst_parent = self
+                .metadata_segments(&dst_segs[..dst_segs.len() - 1])
+                .await?;
+            // Overwrite: same as rename() — drop the occupant first. COPY is
+            // rare enough that a raced 409 isn't worth a retry round.
+            let dst_url = graph_item_path_url(
+                self.ctx.base_url(),
+                &self.ctx.drive_id,
+                &self.ctx.root_item_id,
+                &dst_segs,
+            );
+            if let Ok(json) = self.ctx.get_json(&dst_url).await {
+                if let Ok(occupant) =
+                    serde_json::from_value::<RawItem>(json).map(raw_to_cached)
+                {
+                    let _ = self.ctx.delete_item(&occupant.id).await;
+                }
+            }
+            let url = format!(
+                "{}/drives/{}/items/{}/copy",
+                self.ctx.base_url(),
+                self.ctx.drive_id,
+                src.id
+            );
+            let Some(dst_name) = dst_segs.last().cloned() else {
+                return Err(FsError::Forbidden);
+            };
+            self.ctx
+                .write_request(|http, tkn| {
+                    http.post(&url)
+                        .bearer_auth(tkn)
+                        .header("Content-Type", "application/json")
+                        .body(copy_body(&dst_name, &dst_parent.id).to_string())
+                })
+                .await
+                .map_err(|e| fs_error(&e))?; // 202 Accepted: async server-side
+            self.ctx.cache.invalidate_parent(&dst_segs.join("/"));
+            Ok(())
+        })
+    }
+}
+
+/// One rename/move PATCH attempt.
+fn patch_item(
+    http: &reqwest::Client,
+    token: &str,
+    url: &str,
+    body: &serde_json::Value,
+) -> reqwest::RequestBuilder {
+    http.patch(url)
+        .bearer_auth(token)
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -654,6 +1074,342 @@ impl DavFile for GraphFile {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT: write-side file handle
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Buffered PUT body: stays in memory below the spill threshold, then moves
+/// to a temp file so gigabyte Explorer copies never balloon the process.
+enum WriteSpill {
+    Memory(bytes::BytesMut),
+    File(SpillFile),
+}
+
+struct SpillFile {
+    file: tokio::fs::File,
+    path: PathBuf,
+    len: u64,
+}
+
+impl WriteSpill {
+    async fn new_file() -> Result<Self, std::io::Error> {
+        let nanos = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let path = std::env::temp_dir().join(format!(
+            "shareonelist-webdav-{}-{}.upload",
+            std::process::id(),
+            nanos
+        ));
+        // read+write: the session upload re-reads the body from this handle
+        // after seeking back to 0 (a write-only File::create handle answers
+        // the later read with os error 5 on Windows).
+        let file = tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&path)
+            .await?;
+        Ok(WriteSpill::File(SpillFile { file, path, len: 0 }))
+    }
+
+    fn len(&self) -> u64 {
+        match self {
+            WriteSpill::Memory(m) => m.len() as u64,
+            WriteSpill::File(f) => f.len,
+        }
+    }
+}
+
+/// Write-side handle behind `open(write)`. dav-server streams the request
+/// body in via `write_bytes`/`write_buf` and finishes with `flush()`, which
+/// performs the actual Graph upload (simple PUT, or a resumable session for
+/// large bodies). Junk-named files short-circuit: nothing is ever uploaded.
+pub struct GraphWriteFile {
+    ctx: Arc<FsCtx>,
+    /// Mount-relative segments of the target file.
+    rel: Vec<String>,
+    written: u64,
+    spill: WriteSpill,
+    junk: bool,
+    pos: u64,
+}
+
+// DavFile requires Debug; FsCtx has no Debug derive.
+impl std::fmt::Debug for GraphWriteFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphWriteFile")
+            .field("rel", &self.rel)
+            .field("written", &self.written)
+            .field("junk", &self.junk)
+            .finish()
+    }
+}
+
+impl GraphWriteFile {
+    async fn ingest(&mut self, chunk: bytes::Bytes) -> FsResult<()> {
+        self.written += chunk.len() as u64;
+        match &mut self.spill {
+            WriteSpill::Memory(mem) => {
+                if stays_in_memory(mem.len(), chunk.len()) {
+                    mem.extend_from_slice(&chunk);
+                    return Ok(());
+                }
+                // Switch to a temp file; replay what memory already holds.
+                let spilled = WriteSpill::new_file().await.map_err(|e| {
+                    log::warn!("[webdav] PUT spill file create failed: {}", e);
+                    FsError::GeneralFailure
+                })?;
+                let WriteSpill::File(mut file) = spilled else {
+                    unreachable!("new_file always returns the File variant");
+                };
+                file.file
+                    .write_all(&mem)
+                    .await
+                    .map_err(|e| {
+                        log::warn!("[webdav] PUT spill replay failed: {}", e);
+                        FsError::GeneralFailure
+                    })?;
+                file.file.write_all(&chunk).await.map_err(|e| {
+                    log::warn!("[webdav] PUT spill write failed: {}", e);
+                    FsError::GeneralFailure
+                })?;
+                file.len = (mem.len() + chunk.len()) as u64;
+                self.spill = WriteSpill::File(file);
+            }
+            WriteSpill::File(f) => {
+                f.file.write_all(&chunk).await.map_err(|e| {
+                    log::warn!("[webdav] PUT spill write failed: {}", e);
+                    FsError::GeneralFailure
+                })?;
+                f.len += chunk.len() as u64;
+            }
+        }
+        Ok(())
+    }
+
+    /// Push the buffered body into OneDrive. Memory-resident bodies go out as
+    /// one simple PUT (conflictBehavior=replace: WebDAV PUT means "store
+    /// this"); larger bodies stream through a resumable upload session in
+    /// 4 MiB chunks with per-chunk retries.
+    async fn upload(&mut self) -> FsResult<()> {
+        let total = self.spill.len() as usize;
+        let rel_display = self.rel.join("/");
+        log::info!("[webdav] PUT upload start {} ({} bytes)", rel_display, total);
+        let url = write_content_url(
+            self.ctx.base_url(),
+            &self.ctx.drive_id,
+            &self.ctx.root_item_id,
+            &self.rel,
+        );
+        if let WriteSpill::Memory(mem) = &mut self.spill {
+            let body = mem.split().freeze();
+            let result = self
+                .ctx
+                .write_request(|http, tkn| {
+                    http.put(&url)
+                        .bearer_auth(tkn)
+                        .header("Content-Type", "application/octet-stream")
+                        .body(body.clone())
+                })
+                .await;
+            match result {
+                Ok(_) => {
+                    log::info!("[webdav] PUT simple upload ok {} ({} bytes)", rel_display, total);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("[webdav] PUT simple upload FAILED {}: {:?} url={}", rel_display, e, url);
+                    return Err(write_fs_error(&e));
+                }
+            }
+        }
+
+        // Session upload from the temp file.
+        let WriteSpill::File(f) = &mut self.spill else {
+            log::warn!("[webdav] PUT {}: expected spilled body, got memory", rel_display);
+            unreachable!("total body is on disk here");
+        };
+        if let Err(e) = f.file.flush().await {
+            log::warn!("[webdav] PUT {}: temp flush failed: {}", rel_display, e);
+            return Err(FsError::GeneralFailure);
+        }
+        if let Err(e) = f.file.seek(std::io::SeekFrom::Start(0)).await {
+            log::warn!("[webdav] PUT {}: temp seek failed: {}", rel_display, e);
+            return Err(FsError::GeneralFailure);
+        }
+
+        let session_url = write_session_url(
+            self.ctx.base_url(),
+            &self.ctx.drive_id,
+            &self.ctx.root_item_id,
+            &self.rel,
+        );
+        log::info!("[webdav] PUT {}: creating upload session", rel_display);
+        let session = self
+            .ctx
+            .post_json(&session_url, &json!({
+                "item": { "@microsoft.graph.conflictBehavior": "replace" }
+            }))
+            .await
+            .map_err(|e| {
+                log::warn!(
+                    "[webdav] upload session create FAILED {}: {:?} url={}",
+                    rel_display,
+                    e,
+                    session_url
+                );
+                write_fs_error(&e)
+            })?;
+        let upload_url = session["uploadUrl"]
+            .as_str()
+            .ok_or_else(|| {
+                log::warn!("[webdav] upload session response missing uploadUrl");
+                FsError::GeneralFailure
+            })?
+            .to_string();
+
+        let http = reqwest::Client::builder()
+            .timeout(UPLOAD_CHUNK_TIMEOUT)
+            .build()
+            .map_err(|e| {
+                log::warn!("[webdav] PUT {}: upload client build failed: {}", rel_display, e);
+                FsError::GeneralFailure
+            })?;
+
+        let mut start = 0usize;
+        while start < total {
+            let end = (start + UPLOAD_CHUNK_SIZE).min(total);
+            let mut chunk = vec![0u8; end - start];
+            if let Err(e) = f.file.read_exact(&mut chunk).await {
+                log::warn!("[webdav] PUT {}: temp read at {} failed: {}", rel_display, start, e);
+                return Err(FsError::GeneralFailure);
+            }
+            let range = content_range(start, end, total);
+            let mut ok = false;
+            for attempt in 0..UPLOAD_CHUNK_RETRIES {
+                let response = http
+                    .put(&upload_url)
+                    .header("Content-Range", &range)
+                    .header("Content-Length", end - start)
+                    .body(chunk.clone())
+                    .send()
+                    .await;
+                match response {
+                    Ok(r) if r.status().is_success() => {
+                        ok = true;
+                        break;
+                    }
+                    Ok(r) => {
+                        log::warn!(
+                            "[webdav] upload chunk {} got HTTP {} (attempt {})",
+                            range,
+                            r.status(),
+                            attempt + 1
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[webdav] upload chunk {} failed: {} (attempt {})",
+                            range,
+                            e,
+                            attempt + 1
+                        );
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+            }
+            if !ok {
+                log::warn!("[webdav] PUT {}: chunk {} exhausted retries", rel_display, range);
+                return Err(FsError::GeneralFailure);
+            }
+            start = end;
+        }
+        log::info!("[webdav] PUT session upload ok {} ({} bytes)", rel_display, total);
+        Ok(())
+    }
+}
+
+impl Drop for GraphWriteFile {
+    fn drop(&mut self) {
+        if let WriteSpill::File(f) = &self.spill {
+            // Temp files are unlinked synchronously: flush() already closed
+            // out its data, and an aborted PUT must not leave droppings.
+            let _ = std::fs::remove_file(&f.path);
+        }
+    }
+}
+
+impl DavFile for GraphWriteFile {
+    fn metadata(&mut self) -> FsFuture<'_, Box<dyn DavMetaData>> {
+        Box::pin(futures_util::future::ok(
+            Box::new(GraphMeta(CachedItem {
+                id: String::new(),
+                name: self.rel.last().cloned().unwrap_or_default(),
+                size: self.written,
+                is_dir: false,
+                mime: None,
+                etag: None,
+                modified: None,
+                created: None,
+            })) as Box<dyn DavMetaData>
+        ))
+    }
+
+    fn write_buf(&mut self, mut buf: Box<dyn bytes::Buf + Send>) -> FsFuture<'_, ()> {
+        Box::pin(async move {
+            while buf.has_remaining() {
+                let chunk = buf.copy_to_bytes(buf.chunk().len());
+                self.ingest(chunk).await?;
+            }
+            Ok(())
+        })
+    }
+
+    fn write_bytes(&mut self, buf: bytes::Bytes) -> FsFuture<'_, ()> {
+        Box::pin(async move { self.ingest(buf).await })
+    }
+
+    fn read_bytes(&mut self, _count: usize) -> FsFuture<'_, bytes::Bytes> {
+        Box::pin(futures_util::future::err(FsError::Forbidden))
+    }
+
+    fn seek(&mut self, pos: std::io::SeekFrom) -> FsFuture<'_, u64> {
+        Box::pin(async move {
+            let target = match pos {
+                std::io::SeekFrom::Start(n) => n as i64,
+                std::io::SeekFrom::End(n) => self.written as i64 + n,
+                std::io::SeekFrom::Current(n) => self.pos as i64 + n,
+            };
+            if target < 0 {
+                return Err(FsError::GeneralFailure);
+            }
+            self.pos = target as u64;
+            Ok(self.pos)
+        })
+    }
+
+    /// Upload the buffered body and refresh the directory cache so the next
+    /// listing sees the new size/entry.
+    fn flush(&mut self) -> FsFuture<'_, ()> {
+        Box::pin(async move {
+            log::info!(
+                "[webdav] PUT flush {} ({} bytes, junk={})",
+                self.rel.join("/"),
+                self.written,
+                self.junk
+            );
+            if !self.junk {
+                self.upload().await?;
+            }
+            self.ctx.cache.invalidate_parent(&self.rel.join("/"));
+            Ok(())
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -802,6 +1558,113 @@ mod tests {
             let regular = format!("{}notes.txt", prefix);
             let not_junk = !is_junk_file(&regular);
             prop_assert!(not_junk, "{} should not be junk", regular);
+        }
+    }
+
+    // ── P1 write path ──
+
+    #[test]
+    fn write_content_url_targets_content_endpoint_with_replace() {
+        let url = write_content_url(
+            "https://graph.microsoft.com/v1.0",
+            "drive123",
+            "",
+            &["a b".to_string(), "报 告.docx".to_string()],
+        );
+        assert_eq!(
+            url,
+            "https://graph.microsoft.com/v1.0/drives/drive123/root:/a%20b/%E6%8A%A5%20%E5%91%8A.docx:/content?@microsoft.graph.conflictBehavior=replace"
+        );
+        // the conflictBehavior rides in the query string: `@` is not a legal
+        // header character and reqwest refuses such requests at build time.
+        assert!(url.contains(":/content?"));
+    }
+
+    #[test]
+    fn write_session_url_targets_colon_syntax() {
+        let url = write_session_url(
+            "https://microsoftgraph.chinacloudapi.cn/v1.0",
+            "drive9",
+            "item42",
+            &["docs".to_string(), "big.zip".to_string()],
+        );
+        assert_eq!(
+            url,
+            "https://microsoftgraph.chinacloudapi.cn/v1.0/drives/drive9/items/item42:/docs/big.zip:/createUploadSession"
+        );
+    }
+
+    #[test]
+    fn content_range_is_inclusive_and_total_terminated() {
+        assert_eq!(content_range(0, 4_194_304, 10_000_000), "bytes 0-4194303/10000000");
+        assert_eq!(content_range(4_194_304, 10_000_000, 10_000_000), "bytes 4194304-9999999/10000000");
+        // degenerate total=0 never reaches the chunk loop (start < total), so
+        // no underflow case exists by construction.
+    }
+
+    #[test]
+    fn create_folder_body_fails_on_conflict() {
+        let body = create_folder_body("新建文件夹");
+        assert_eq!(body["name"], "新建文件夹");
+        assert_eq!(body["@microsoft.graph.conflictBehavior"], "fail");
+        assert!(body["folder"].is_object());
+    }
+
+    #[test]
+    fn move_patch_body_targets_parent_and_name() {
+        let body = move_patch_body("renamed.txt", "parentId7");
+        assert_eq!(body["name"], "renamed.txt");
+        assert_eq!(body["parentReference"]["id"], "parentId7");
+        let copy = copy_body("copied.txt", "parentRef8");
+        assert_eq!(copy["name"], "copied.txt");
+        assert_eq!(copy["parentReference"]["id"], "parentRef8");
+    }
+
+    #[test]
+    fn write_fs_error_maps_conflict_and_missing() {
+        let conflict = AppError::GraphApi {
+            message: "nameAlreadyExists".into(),
+            status_code: 409,
+        };
+        assert!(matches!(write_fs_error(&conflict), FsError::Exists));
+        let missing = AppError::GraphApi {
+            message: "itemNotFound".into(),
+            status_code: 404,
+        };
+        assert!(matches!(write_fs_error(&missing), FsError::NotFound));
+        let other = AppError::GraphApi {
+            message: "throttled".into(),
+            status_code: 429,
+        };
+        assert!(matches!(write_fs_error(&other), FsError::GeneralFailure));
+    }
+
+    #[test]
+    fn write_target_junk_decision_matches_listing_filter() {
+        assert!(write_target_is_junk(&["docs".to_string(), ".DS_Store".to_string()]));
+        assert!(write_target_is_junk(&["._macfile".to_string()]));
+        assert!(!write_target_is_junk(&["docs".to_string(), "report.pdf".to_string()]));
+        // mount root itself is never junk (it's protected by other checks)
+        assert!(!write_target_is_junk(&[]));
+    }
+
+    // Feature: webdav-mount, Property 8: PUT bodies stay in memory up to the
+    // spill threshold and anything beyond it moves to a temp file
+    proptest::proptest! {
+        #[test]
+        fn spill_decision_follows_threshold(
+            current in 0usize..=WRITE_SPILL_THRESHOLD,
+            incoming in 1usize..=8 * 1024 * 1024,
+        ) {
+            let total = current + incoming;
+            let in_memory = stays_in_memory(current, incoming);
+            if in_memory {
+                // memory-resident bodies never exceed the cap
+                prop_assert!(total <= WRITE_SPILL_THRESHOLD);
+            } else {
+                // anything beyond the cap is destined for the temp file
+                prop_assert!(total > WRITE_SPILL_THRESHOLD);
+            }
         }
     }
 }

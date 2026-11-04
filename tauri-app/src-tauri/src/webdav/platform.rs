@@ -477,8 +477,6 @@ mod macos {
     const K_NAUI_OPTION_KEY: &str = "UIOption";
     const K_NAUI_OPTION_NO_UI: &str = "NoUI";
     const K_NET_FS_MOUNT_FLAGS_KEY: &str = "MountFlags";
-    // <sys/mount.h>
-    const MNT_RDONLY: i64 = 0x0000_0001;
 
     #[link(name = "NetFS", kind = "framework")]
     extern "C" {
@@ -527,11 +525,12 @@ mod macos {
                 CFString::new(K_NAUI_OPTION_NO_UI).into_CFType(),
             ),
         ]);
-        // The P0 gateway is read-only; MNT_RDONLY also stops Finder writing
-        // ._*/.DS_Store junk at it (fs.rs already filters those from lists).
+        // The gateway accepts writes (PUT/MKCOL/MOVE/DELETE) since P1: no
+        // MNT_RDONLY. Finder's ._* / .DS_Store droppings are black-holed by
+        // fs.rs so they never land in the cloud or surface in listings.
         let mount_options = CFMutableDictionary::from_CFType_pairs(&[(
             CFString::new(K_NET_FS_MOUNT_FLAGS_KEY),
-            CFNumber::from(MNT_RDONLY).into_CFType(),
+            CFNumber::from(0).into_CFType(),
         )]);
 
         let user = CFString::new(username);

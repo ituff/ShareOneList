@@ -148,8 +148,9 @@ impl WebDavManager {
         );
         let handler = DavHandler::builder()
             .filesystem(Box::new(fs))
-            // Fake locksystem advertises DAV class 2 (Office needs it); P1
-            // swaps in real write support behind the same locksystem.
+            // Fake locksystem advertises DAV class 2 (Office needs LOCK/UNLOCK
+            // to succeed before saving); enforcement is pointless behind a
+            // single-user gateway, so the fake one stays.
             .locksystem(dav_server::fakels::FakeLs::new())
             .strip_prefix(format!("/m/{}", entry.mount_id))
             .autoindex(false)

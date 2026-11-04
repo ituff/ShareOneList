@@ -42,6 +42,7 @@ Built with Tauri 2 + Rust + React: small installer, fast startup, low memory foo
 ### 🧩 Cloud drives as real disks
 
 - Mount OneDrive / SharePoint document libraries as **Windows drive letters or macOS Finder volumes** through a built-in local WebDAV gateway — no third-party driver, mounts appear right in Explorer / Finder
+- Read-write mounts: drag files onto the drive to upload (resumable for big files), rename, move, and delete right from Explorer / Finder — deletes land in the OneDrive recycle bin, Office saves in place
 - Multiple accounts and mount points: scope each mount to My OneDrive, a site document library, or a subfolder; custom gateway path names and (on Windows) drive letters; mounts restore automatically on the next launch
 - Windows diagnostics with one-click repair (WebClient service, Basic auth policy, 50 MB per-file limit); macOS mounts go through the system NetFS interface with clear error messages
 

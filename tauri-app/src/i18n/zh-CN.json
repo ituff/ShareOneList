@@ -646,7 +646,7 @@
   },
   "webdavMount": {
     "title": "云盘挂载",
-    "description": "通过本地 WebDAV 网关，把 OneDrive / SharePoint 文档库挂载为 Windows 盘符或 macOS Finder 卷。无需安装驱动；挂载是在线视图，App 退出后即离线。",
+    "description": "通过本地 WebDAV 网关，把 OneDrive / SharePoint 文档库挂载为 Windows 盘符或 macOS Finder 卷。无需安装驱动；可直接在资源管理器 / Finder 中上传与整理文件，App 退出后挂载即离线。",
     "refresh": "刷新",
     "gateway": "WebDAV 网关",
     "gatewayRunning": "运行中，端口 {{port}}",

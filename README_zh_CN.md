@@ -42,6 +42,7 @@ ShareOneList 是一款专注 Microsoft 365 的跨平台桌面文件管理器。*
 ### 🧩 云盘挂载为本地磁盘
 
 - 通过内置本地 WebDAV 网关，把 OneDrive / SharePoint 文档库直接挂载为 **Windows 盘符或 macOS Finder 卷**——无需安装第三方驱动，挂载就在资源管理器 / Finder 里
+- 挂载可读写：直接在资源管理器 / Finder 里拖入上传（大文件自动分块续传）、重命名、移动、删除（删除进 OneDrive 回收站），Office 可原地保存
 - 多账号、多挂载点：范围可选我的 OneDrive / 站点文档库 / 子目录，可自定义网关路径名与（Windows）盘符；挂载在下次启动时自动恢复
 - Windows 诊断与一键修复（WebClient 服务、Basic 认证策略、50 MB 单文件上限）；macOS 走系统 NetFS 接口，失败给出明确错误
 

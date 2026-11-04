@@ -646,7 +646,7 @@
   },
   "webdavMount": {
     "title": "Cloud Drive Mounting",
-    "description": "Mount OneDrive / SharePoint libraries as Windows drive letters or macOS Finder volumes via a local WebDAV gateway. No driver required; mounts are online views and go offline when the app quits.",
+    "description": "Mount OneDrive / SharePoint libraries as Windows drive letters or macOS Finder volumes via a local WebDAV gateway. No driver required; upload and organize files right from Explorer / Finder — mounts go offline when the app quits.",
     "refresh": "Refresh",
     "gateway": "WebDAV gateway",
     "gatewayRunning": "Running on port {{port}}",
