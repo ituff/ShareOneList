@@ -37,7 +37,7 @@ tauri-plugin-single-instance = "2"
 log = "0.4"
 tauri-plugin-log = "2"
 # Office/PDF text extraction for AI context injection
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.36"
 pdf-extract = "0.7"
 # Chat history persistence

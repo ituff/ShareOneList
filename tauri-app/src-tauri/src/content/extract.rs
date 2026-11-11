@@ -92,7 +92,9 @@ fn read_parts(bytes: &[u8], filter: impl Fn(&str) -> bool) -> Result<Vec<Vec<u8>
             message: format!("corrupt Office document: {}", e),
             field: "item_id".to_string(),
         })?;
-        let name = entry.name().to_string();
+        // A name that is neither UTF-8 nor CP437-decodable can never match an
+        // OOXML part name; skip the entry.
+        let Ok(name) = entry.name() else { continue };
         if filter(&name) {
             let mut data = Vec::with_capacity(entry.size() as usize);
             std::io::Read::read_to_end(&mut entry, &mut data).map_err(|e| AppError::Validation {
@@ -128,14 +130,19 @@ pub fn pptx_text(bytes: &[u8]) -> Result<String, AppError> {
     })?;
     let mut slides: Vec<(u32, Vec<u8>)> = Vec::new();
     for i in 0..archive.len() {
-        let name = archive
-            .by_index_raw(i)
-            .map_err(|e| AppError::Validation {
+        // A name that is neither UTF-8 nor CP437-decodable can never match a
+        // slide part name; skip the entry. The name is owned so the entry
+        // handle can be dropped before `by_name` reopens it.
+        let name = {
+            let entry = archive.by_index_raw(i).map_err(|e| AppError::Validation {
                 message: format!("corrupt Office document: {}", e),
                 field: "item_id".to_string(),
-            })?
-            .name()
-            .to_string();
+            })?;
+            match entry.name() {
+                Ok(name) => name.into_owned(),
+                Err(_) => continue,
+            }
+        };
         let Some(number) = name
             .strip_prefix("ppt/slides/slide")
             .and_then(|rest| rest.strip_suffix(".xml"))
