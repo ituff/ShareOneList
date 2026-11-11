@@ -96,7 +96,10 @@ fn read_parts(bytes: &[u8], filter: impl Fn(&str) -> bool) -> Result<Vec<Vec<u8>
         // OOXML part name; skip the entry.
         let Ok(name) = entry.name() else { continue };
         if filter(&name) {
-            let mut data = Vec::with_capacity(entry.size() as usize);
+            // The declared size is attacker-controlled; preallocating from it
+            // can abort the process on a forged huge value. Grow from actual
+            // bytes instead.
+            let mut data = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut data).map_err(|e| AppError::Validation {
                 message: format!("corrupt Office document: {}", e),
                 field: "item_id".to_string(),
@@ -154,7 +157,10 @@ pub fn pptx_text(bytes: &[u8]) -> Result<String, AppError> {
             message: format!("corrupt Office document: {}", e),
             field: "item_id".to_string(),
         })?;
-        let mut data = Vec::with_capacity(entry.size() as usize);
+        // The declared size is attacker-controlled; preallocating from it
+        // can abort the process on a forged huge value. Grow from actual
+        // bytes instead.
+        let mut data = Vec::new();
         std::io::Read::read_to_end(&mut entry, &mut data).map_err(|e| AppError::Validation {
             message: format!("corrupt Office document: {}", e),
             field: "item_id".to_string(),
