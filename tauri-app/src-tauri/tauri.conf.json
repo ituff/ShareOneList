@@ -1,7 +1,7 @@
 {
   "productName": "ShareOneList",
   "mainBinaryName": "ShareOneList",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "identifier": "com.shareonelist.app",
   "build": {
     "beforeDevCommand": "npm run dev",
