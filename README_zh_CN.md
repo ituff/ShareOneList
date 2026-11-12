@@ -25,6 +25,7 @@ ShareOneList 是一款专注 Microsoft 365 的跨平台桌面文件管理器。*
 ### 🤖 AI 助手：直接问你的云盘
 
 - 提问自动检索 OneDrive / SharePoint，读取 **docx / pptx / xlsx / pdf** 等文档内容后作答，回答附带**可点击的引用卡片**，来源可溯
+- 文档解析持续跟进上游安全更新：特制或损坏的 Office / PDF 文件不会拖垮应用，AI 读取始终稳健
 - 接入任意 OpenAI 兼容供应商：内置 OpenAI、Azure OpenAI、DeepSeek、阿里百炼、Moonshot、智谱、Ollama 预设，支持连接测试和在线拉取模型列表
 - 推理模型的思考过程实时展示，结束后自动折叠为一行，随时展开回看
 - 聊天历史本地保存：重启不丢会话，多轮上下文完整保留

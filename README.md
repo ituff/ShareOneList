@@ -25,6 +25,7 @@ Built with Tauri 2 + Rust + React: small installer, fast startup, low memory foo
 ### 🤖 AI assistant: ask your cloud directly
 
 - Questions automatically search OneDrive / SharePoint, read **docx / pptx / xlsx / pdf** content, and answer with **clickable citation cards** — every claim traceable to a file
+- Document parsing tracks upstream security updates: crafted or corrupted Office / PDF files can't take the app down, so AI reading stays robust
 - Works with any OpenAI-compatible provider: built-in presets for OpenAI, Azure OpenAI, DeepSeek, Alibaba Bailian, Moonshot, Zhipu, and Ollama, with connection testing and online model listing
 - Reasoning models show their thinking live, then collapse into a single line you can expand anytime
 - Chat history is stored locally: conversations survive restarts with full multi-turn context
