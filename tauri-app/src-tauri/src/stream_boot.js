@@ -241,8 +241,8 @@
     try {
       var parsed = new URL(fetchUrl);
       var here = location.hostname;
-      if (here.indexOf('.mcas.ms') === here.length - 8 &&
-          parsed.hostname.indexOf('.sharepoint.com') === parsed.hostname.length - 15) {
+      if (here.endsWith('.mcas.ms') &&
+          parsed.hostname.endsWith('.sharepoint.com')) {
         parsed.hostname = parsed.hostname + '.mcas.ms';
         fetchUrl = parsed.href;
       }

@@ -119,20 +119,19 @@ impl AuthModule {
                         );
                     }
                     eprintln!(
-                        "[auth] Restored {} session",
-                        keyring_key(&env, &account.home_account_id)
+                        "[auth] Restored session for account {}",
+                        account_log_tag(&env, &account.home_account_id)
                     );
                 }
                 Err(AppError::Auth { message, .. }) if message.contains("No active session") => {
                     eprintln!(
-                        "[auth] No stored credential for '{}' ({}) - please log in again",
-                        account.display_name,
-                        keyring_key(&env, &account.home_account_id)
+                        "[auth] No stored credential for account {} - please log in again",
+                        account_log_tag(&env, &account.home_account_id)
                     );
                 }
                 Err(e) => eprintln!(
-                    "[auth] Failed to restore {} session: {}",
-                    keyring_key(&env, &account.home_account_id),
+                    "[auth] Failed to restore session for account {}: {}",
+                    account_log_tag(&env, &account.home_account_id),
                     e
                 ),
             }
@@ -282,9 +281,9 @@ impl AuthModule {
                 }
             } else {
                 eprintln!(
-                    "[auth] WARNING: {} login returned no refresh token; \
+                    "[auth] WARNING: login for account {} returned no refresh token; \
                      credentials will NOT survive an app restart",
-                    keyring_key(cloud_env, home_account_id)
+                    account_log_tag(cloud_env, home_account_id)
                 );
             }
         }
@@ -456,14 +455,14 @@ impl AuthModule {
                 if e.contains("invalid_grant") {
                     if let Err(delete_err) = delete_refresh_token(cloud_env, home_account_id) {
                         eprintln!(
-                            "[auth] Failed to purge dead refresh token for {}: {}",
-                            keyring_key(cloud_env, home_account_id),
+                            "[auth] Failed to purge dead refresh token for account {}: {}",
+                            account_log_tag(cloud_env, home_account_id),
                             delete_err
                         );
                     } else {
                         eprintln!(
-                            "[auth] Purged dead refresh token for {} (re-login required)",
-                            keyring_key(cloud_env, home_account_id)
+                            "[auth] Purged dead refresh token for account {} (re-login required)",
+                            account_log_tag(cloud_env, home_account_id)
                         );
                     }
                 }
@@ -737,6 +736,19 @@ fn keyring_key(cloud_env: &CloudEnvironment, home_account_id: &str) -> String {
         CloudEnvironment::China => "china",
     };
     format!("refresh_token_{}_{}", home_account_id, env)
+}
+
+/// Log-safe account tag: a short SHA-256 fingerprint of the keyring key so
+/// multi-account log lines stay distinguishable without writing the raw
+/// `home_account_id` (an account identifier) to stderr/console logs.
+fn account_log_tag(cloud_env: &CloudEnvironment, home_account_id: &str) -> String {
+    let digest = Sha256::digest(keyring_key(cloud_env, home_account_id).as_bytes());
+    let hex: String = digest[..4].iter().map(|b| format!("{:02x}", b)).collect();
+    let env = match cloud_env {
+        CloudEnvironment::Global => "global",
+        CloudEnvironment::China => "china",
+    };
+    format!("{}#{}", env, hex)
 }
 
 /// Windows Credential Manager stores blobs as UTF-16 capped at 2560 bytes
