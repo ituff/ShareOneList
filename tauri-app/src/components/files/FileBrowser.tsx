@@ -211,6 +211,8 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   // Multi-select state
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // Anchor item for Shift+click range selection.
+  const [lastCheckedId, setLastCheckedId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ActionDialog | null>(null);
 
   // Load root folder on mount
@@ -221,6 +223,7 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   // Clear selection when navigating to a different folder
   useEffect(() => {
     setSelectedItems(new Set());
+    setLastCheckedId(null);
   }, [currentFolderId]);
 
   // Listen for Tauri drag-drop events (OS file drop)
@@ -391,23 +394,79 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
       if (prev) {
         // Exiting selection mode clears selection
         setSelectedItems(new Set());
+        setLastCheckedId(null);
       }
       return !prev;
     });
   }, []);
 
-  /** Toggle selection for a single item. */
-  const handleToggleSelect = useCallback((itemId: string) => {
-    setSelectedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(itemId)) {
-        next.delete(itemId);
-      } else {
-        next.add(itemId);
+  /**
+   * Toggle selection for a single item, or on Shift+click fill the whole range
+   * from the anchor item to this one with the anchor's checked state.
+   */
+  const handleToggleSelect = useCallback(
+    (itemId: string, shiftKey?: boolean) => {
+      setSelectedItems((prev) => {
+        const next = new Set(prev);
+        // Shift+click: apply the anchor's state to everything between it and this item.
+        if (shiftKey && lastCheckedId && lastCheckedId !== itemId) {
+          const anchorIndex = items.findIndex((item) => item.id === lastCheckedId);
+          const targetIndex = items.findIndex((item) => item.id === itemId);
+          if (anchorIndex !== -1 && targetIndex !== -1) {
+            const start = Math.min(anchorIndex, targetIndex);
+            const end = Math.max(anchorIndex, targetIndex);
+            const fill = prev.has(lastCheckedId);
+            for (let i = start; i <= end; i++) {
+              const rangeId = items[i]?.id;
+              if (rangeId == null) continue;
+              if (fill) {
+                next.add(rangeId);
+              } else {
+                next.delete(rangeId);
+              }
+            }
+            return next;
+          }
+        }
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
+        return next;
+      });
+      // Plain clicks move the anchor so Shift+clicks can extend from it.
+      if (!shiftKey || !lastCheckedId) {
+        setLastCheckedId(itemId);
       }
-      return next;
-    });
-  }, []);
+    },
+    [items, lastCheckedId]
+  );
+
+  /** Start a folder download into `targetDir` and register its task (no dialogs). */
+  const startFolderDownload = useCallback(
+    async (item: DriveItem, targetDir: string) => {
+      const localPath = await join(targetDir, item.name);
+      const batch = await downloadFolder(
+        driveId,
+        item.id,
+        localPath,
+        cloudEnv,
+        homeAccountId,
+        item.name
+      );
+      useTaskStore.getState().registerTask(batch.batchId, {
+        type: "download",
+        fileName: batch.batchName,
+        homeAccountId,
+        driveId,
+        cloudEnv,
+        itemId: item.id,
+        localPath,
+      });
+    },
+    [driveId, cloudEnv, homeAccountId]
+  );
 
   const handleDownloadItem = useCallback(
     async (item: DriveItem) => {
@@ -422,34 +481,14 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
           });
           if (!selectedDir || Array.isArray(selectedDir)) return;
           setLastDownloadPath(selectedDir);
-          localPath = await join(selectedDir, item.name);
+          await startFolderDownload(item, selectedDir);
         } else {
           const defaultPath = await join(dir, item.name);
           const selected = await save({ defaultPath });
           if (!selected) return;
           setLastDownloadPath(await dirname(selected));
           localPath = selected;
-        }
 
-        if (item.isFolder) {
-          const batch = await downloadFolder(
-            driveId,
-            item.id,
-            localPath,
-            cloudEnv,
-            homeAccountId,
-            item.name
-          );
-          useTaskStore.getState().registerTask(batch.batchId, {
-            type: "download",
-            fileName: batch.batchName,
-            homeAccountId,
-            driveId,
-            cloudEnv,
-            itemId: item.id,
-            localPath,
-          });
-        } else {
           const batch = await downloadFile(
             driveId,
             item.id,
@@ -473,7 +512,7 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
         addToast("error", getErrorMessage(err));
       }
     },
-    [driveId, cloudEnv, addToast, lastDownloadPath, setLastDownloadPath]
+    [driveId, cloudEnv, addToast, lastDownloadPath, setLastDownloadPath, startFolderDownload]
   );
 
   const handleFileAction = useCallback(
@@ -533,21 +572,24 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
     [tabId, navigateToFolder, onOpenPreview, handleDownloadItem]
   );
 
-  /** Download all selected items. */
+  /** Download all selected items into one directory chosen via a single dialog. */
   const handleDownloadSelected = useCallback(async () => {
     const selected = items.filter((item) => selectedItems.has(item.id));
+    if (selected.length === 0) return;
+
+    // Ask once: every selected file/folder downloads into the same directory.
+    const dir = lastDownloadPath ?? (await downloadDir());
+    const selectedDir = await open({
+      directory: true,
+      defaultPath: dir,
+    });
+    if (!selectedDir || Array.isArray(selectedDir)) return;
+    setLastDownloadPath(selectedDir);
+
     const files = selected.filter((item) => !item.isFolder);
     const folders = selected.filter((item) => item.isFolder);
 
     if (files.length > 0) {
-      const dir = lastDownloadPath ?? (await downloadDir());
-      const selectedDir = await open({
-        directory: true,
-        defaultPath: dir,
-      });
-      if (!selectedDir || Array.isArray(selectedDir)) return;
-      setLastDownloadPath(selectedDir);
-
       const specs: DownloadFileSpec[] = files.map((file) => ({
         itemId: file.id,
         fileName: file.name,
@@ -573,7 +615,12 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
     }
 
     for (const folder of folders) {
-      await handleDownloadItem(folder);
+      try {
+        await startFolderDownload(folder, selectedDir);
+      } catch (err) {
+        // One failed folder must not abort the remaining downloads.
+        addToast("error", getErrorMessage(err));
+      }
     }
 
     // Clear selection after initiating downloads
@@ -582,12 +629,13 @@ export function FileBrowser({ tabId, isActive, driveId, homeAccountId, cloudEnv,
   }, [
     items,
     selectedItems,
-    handleDownloadItem,
+    startFolderDownload,
     driveId,
     homeAccountId,
     cloudEnv,
     lastDownloadPath,
     setLastDownloadPath,
+    addToast,
     t,
   ]);
 

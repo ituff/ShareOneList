@@ -124,8 +124,8 @@ interface FileItemProps {
   selectionMode?: boolean;
   /** Whether this item is currently selected. */
   isSelected?: boolean;
-  /** Called when the selection checkbox is toggled. */
-  onToggleSelect?: (itemId: string) => void;
+  /** Called when the selection checkbox is toggled; `shiftKey` requests a range fill from the anchor item. */
+  onToggleSelect?: (itemId: string, shiftKey?: boolean) => void;
   /** Called when an item action is chosen. */
   onAction?: (item: DriveItem, action: FileItemAction) => void;
   /** Called when a file is double-clicked. */
@@ -459,7 +459,14 @@ function ListItem({ item, driveId, cloudEnv, onNavigate, selectionMode, isSelect
           type="checkbox"
           checked={isSelected ?? false}
           onChange={() => onToggleSelect?.(item.id)}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.shiftKey) {
+              // Suppress the native toggle so only the range handler runs.
+              e.preventDefault();
+              onToggleSelect?.(item.id, true);
+            }
+          }}
           className="h-4 w-4 rounded border-border accent-primary shrink-0"
           aria-label={`Select ${item.name}`}
         />
@@ -509,7 +516,14 @@ function GridItem({ item, driveId, cloudEnv, onNavigate, selectionMode, isSelect
           type="checkbox"
           checked={isSelected ?? false}
           onChange={() => onToggleSelect?.(item.id)}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.shiftKey) {
+              // Suppress the native toggle so only the range handler runs.
+              e.preventDefault();
+              onToggleSelect?.(item.id, true);
+            }
+          }}
           className="absolute top-2 left-2 h-4 w-4 rounded border-border accent-primary"
           aria-label={`Select ${item.name}`}
         />
@@ -556,7 +570,14 @@ function GalleryItem({ item, driveId, cloudEnv, onNavigate, selectionMode, isSel
           type="checkbox"
           checked={isSelected ?? false}
           onChange={() => onToggleSelect?.(item.id)}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (e.shiftKey) {
+              // Suppress the native toggle so only the range handler runs.
+              e.preventDefault();
+              onToggleSelect?.(item.id, true);
+            }
+          }}
           className="absolute top-2 left-2 z-10 h-4 w-4 rounded border-border accent-primary"
           aria-label={`Select ${item.name}`}
         />
