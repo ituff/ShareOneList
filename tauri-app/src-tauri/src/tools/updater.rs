@@ -17,10 +17,12 @@ const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const CHANNEL_STABLE: &str = "stable";
 pub const CHANNEL_BETA: &str = "beta";
 
-/// Download source prefixes tried in order. The empty prefix is GitHub direct;
-/// the others are China-friendly GitHub acceleration mirrors. Prefixes must
+/// Download source prefixes tried in order. The first is the China-friendly
+/// reverse proxy preferred for speed; the empty prefix is GitHub direct, kept
+/// as a fallback along with the other acceleration mirrors. Prefixes must
 /// simply be prepended to the full release download URL.
 const DOWNLOAD_SOURCE_PREFIXES: &[&str] = &[
+    "https://jscdn.msone.top/",
     "",
     "https://ghfast.top/",
     "https://gh-proxy.com/",
